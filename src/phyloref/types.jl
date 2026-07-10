@@ -1,11 +1,11 @@
 Base.@kwdef struct PhyloRef
     tree::CompactTree
     ape_node_ids::Vector{Int} = Int[]
-    evotraits_node_ids_from_ape::Vector{Int} = Int[]
+    compact_node_ids_from_ape::Vector{Int} = Int[]
     ape_cladewise_edge_ranks::Vector{Int} = Int[]
     ape_postorder_edge_ranks::Vector{Int} = Int[]
-    evotraits_edge_ids_from_ape_cladewise::Vector{Int} = Int[]
-    evotraits_edge_ids_from_ape_postorder::Vector{Int} = Int[]
+    compact_edge_ids_from_ape_cladewise::Vector{Int} = Int[]
+    compact_edge_ids_from_ape_postorder::Vector{Int} = Int[]
     tip_positions_by_node::Vector{Int} = Int[]
     descendant_tip_positions_by_node::Vector{Vector{Int32}} = Vector{Vector{Int32}}()
     descendant_tip_positions_by_edge::Vector{Vector{Int32}} = Vector{Vector{Int32}}()
@@ -13,12 +13,12 @@ end
 
 function build_phyloref(tree::CompactTree)
     ape_node_ids = fill(0, tree.nnodes)
-    evotraits_node_ids_from_ape = fill(0, tree.nnodes)
+    compact_node_ids_from_ape = fill(0, tree.nnodes)
     tip_positions_by_node = fill(0, tree.nnodes)
 
     @inbounds for (tip_pos, node) in enumerate(tree.tip_ids)
         ape_node_ids[Int(node)] = tip_pos
-        evotraits_node_ids_from_ape[tip_pos] = Int(node)
+        compact_node_ids_from_ape[tip_pos] = Int(node)
         tip_positions_by_node[Int(node)] = tip_pos
     end
 
@@ -26,7 +26,7 @@ function build_phyloref(tree::CompactTree)
     @inbounds for (internal_rank, node) in enumerate(preorder_internal)
         ape_id = tree.ntips + internal_rank
         ape_node_ids[Int(node)] = ape_id
-        evotraits_node_ids_from_ape[ape_id] = Int(node)
+        compact_node_ids_from_ape[ape_id] = Int(node)
     end
 
     descendant_tip_positions_by_node = [Int32[] for _ in 1:tree.nnodes]
@@ -70,25 +70,25 @@ function build_phyloref(tree::CompactTree)
 
     ape_cladewise_edge_ranks = fill(0, tree.nedges)
     ape_postorder_edge_ranks = fill(0, tree.nedges)
-    evotraits_edge_ids_from_ape_cladewise = Vector{Int}(undef, tree.nedges)
-    evotraits_edge_ids_from_ape_postorder = Vector{Int}(undef, tree.nedges)
+    compact_edge_ids_from_ape_cladewise = Vector{Int}(undef, tree.nedges)
+    compact_edge_ids_from_ape_postorder = Vector{Int}(undef, tree.nedges)
     @inbounds for (rank, edge) in enumerate(cladewise_edge_ids)
         ape_cladewise_edge_ranks[edge] = rank
-        evotraits_edge_ids_from_ape_cladewise[rank] = edge
+        compact_edge_ids_from_ape_cladewise[rank] = edge
     end
     @inbounds for (rank, edge) in enumerate(postorder_edge_ids)
         ape_postorder_edge_ranks[edge] = rank
-        evotraits_edge_ids_from_ape_postorder[rank] = edge
+        compact_edge_ids_from_ape_postorder[rank] = edge
     end
 
     return PhyloRef(
         tree = tree,
         ape_node_ids = ape_node_ids,
-        evotraits_node_ids_from_ape = evotraits_node_ids_from_ape,
+        compact_node_ids_from_ape = compact_node_ids_from_ape,
         ape_cladewise_edge_ranks = ape_cladewise_edge_ranks,
         ape_postorder_edge_ranks = ape_postorder_edge_ranks,
-        evotraits_edge_ids_from_ape_cladewise = evotraits_edge_ids_from_ape_cladewise,
-        evotraits_edge_ids_from_ape_postorder = evotraits_edge_ids_from_ape_postorder,
+        compact_edge_ids_from_ape_cladewise = compact_edge_ids_from_ape_cladewise,
+        compact_edge_ids_from_ape_postorder = compact_edge_ids_from_ape_postorder,
         tip_positions_by_node = tip_positions_by_node,
         descendant_tip_positions_by_node = descendant_tip_positions_by_node,
         descendant_tip_positions_by_edge = descendant_tip_positions_by_edge,

@@ -50,39 +50,33 @@ function phylo_edges_from_signatures(tree::CompactTree, signatures::AbstractVect
     end for signature in signatures]
 end
 
-function R_node_id(tree::CompactTree, node::Integer; map::PhyloRef = build_phyloref(tree))
+function ape_node_id(tree::CompactTree, node::Integer; map::PhyloRef = build_phyloref(tree))
     1 <= node <= tree.nnodes || throw(ArgumentError("node $node is outside 1:$(tree.nnodes)"))
     return map.ape_node_ids[Int(node)]
 end
 
-function evotraits_node_id(tree::CompactTree, R_node_id_value::Integer; map::PhyloRef = build_phyloref(tree))
-    1 <= R_node_id_value <= tree.nnodes || throw(ArgumentError("R node id $R_node_id_value is outside 1:$(tree.nnodes)"))
-    node = map.evotraits_node_ids_from_ape[Int(R_node_id_value)]
-    node != 0 || throw(ArgumentError("R node id $R_node_id_value has no EvoTraits mapping"))
+function compact_node_id(tree::CompactTree, ape_node_id_value::Integer; map::PhyloRef = build_phyloref(tree))
+    1 <= ape_node_id_value <= tree.nnodes || throw(ArgumentError("ape node id $ape_node_id_value is outside 1:$(tree.nnodes)"))
+    node = map.compact_node_ids_from_ape[Int(ape_node_id_value)]
+    node != 0 || throw(ArgumentError("ape node id $ape_node_id_value has no CompactTree mapping"))
     return node
 end
 
-function R_edge_id_cladewise(tree::CompactTree, edge::Integer; map::PhyloRef = build_phyloref(tree))
+function ape_edge_id(tree::CompactTree, edge::Integer; order::Symbol = :cladewise, map::PhyloRef = build_phyloref(tree))
     1 <= edge <= tree.nedges || throw(ArgumentError("edge $edge is outside 1:$(tree.nedges)"))
-    return map.ape_cladewise_edge_ranks[Int(edge)]
+    return order === :cladewise ? map.ape_cladewise_edge_ranks[Int(edge)] :
+        order === :postorder ? map.ape_postorder_edge_ranks[Int(edge)] :
+        throw(ArgumentError("Unsupported order=$order; expected :cladewise or :postorder"))
 end
 
-function R_edge_id_postorder(tree::CompactTree, edge::Integer; map::PhyloRef = build_phyloref(tree))
-    1 <= edge <= tree.nedges || throw(ArgumentError("edge $edge is outside 1:$(tree.nedges)"))
-    return map.ape_postorder_edge_ranks[Int(edge)]
+function compact_edge_id(tree::CompactTree, ape_edge_id_value::Integer; order::Symbol = :cladewise, map::PhyloRef = build_phyloref(tree))
+    1 <= ape_edge_id_value <= tree.nedges || throw(ArgumentError("ape edge id $ape_edge_id_value is outside 1:$(tree.nedges)"))
+    return order === :cladewise ? map.compact_edge_ids_from_ape_cladewise[Int(ape_edge_id_value)] :
+        order === :postorder ? map.compact_edge_ids_from_ape_postorder[Int(ape_edge_id_value)] :
+        throw(ArgumentError("Unsupported order=$order; expected :cladewise or :postorder"))
 end
 
-function evotraits_edge_id_from_R_cladewise(tree::CompactTree, R_edge_id_value::Integer; map::PhyloRef = build_phyloref(tree))
-    1 <= R_edge_id_value <= tree.nedges || throw(ArgumentError("R cladewise edge id $R_edge_id_value is outside 1:$(tree.nedges)"))
-    return map.evotraits_edge_ids_from_ape_cladewise[Int(R_edge_id_value)]
-end
-
-function evotraits_edge_id_from_R_postorder(tree::CompactTree, R_edge_id_value::Integer; map::PhyloRef = build_phyloref(tree))
-    1 <= R_edge_id_value <= tree.nedges || throw(ArgumentError("R postorder edge id $R_edge_id_value is outside 1:$(tree.nedges)"))
-    return map.evotraits_edge_ids_from_ape_postorder[Int(R_edge_id_value)]
-end
-
-function R_edge_matrix(tree::CompactTree; order::Symbol = :cladewise, map::PhyloRef = build_phyloref(tree))
+function ape_edge_matrix(tree::CompactTree; order::Symbol = :cladewise, map::PhyloRef = build_phyloref(tree))
     ranks = order === :cladewise ? map.ape_cladewise_edge_ranks : order === :postorder ? map.ape_postorder_edge_ranks : throw(ArgumentError("Unsupported order=$order; expected :cladewise or :postorder"))
     edge_ids = sortperm(ranks)
     matrix = Matrix{Int}(undef, tree.nedges, 2)

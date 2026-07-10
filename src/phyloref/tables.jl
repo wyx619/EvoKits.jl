@@ -8,7 +8,7 @@ function phyloref_node_table(tree::CompactTree; map::PhyloRef = build_phyloref(t
         tipX[node], tipY[node] = phylo_node_anchor(tree, node; map = map)
     end
     return DataFrame(
-        evotraits_node_id = collect(1:tree.nnodes),
+        compact_node_id = collect(1:tree.nnodes),
         ape_node_id = ape_node_id,
         is_tip = is_tip,
         label = label,
@@ -45,9 +45,9 @@ function phyloref_edge_table(tree::CompactTree; edges::Union{Nothing, AbstractVe
         descendant_signature[i] = phylo_edge_signature(tree, edge; map = map)
     end
     return DataFrame(
-        evotraits_edge_id = edge_ids,
-        evotraits_parent_node_id = parent_node_id,
-        evotraits_child_node_id = child_node_id,
+        compact_edge_id = edge_ids,
+        compact_parent_node_id = parent_node_id,
+        compact_child_node_id = child_node_id,
         ape_parent_node_id = ape_parent_node_id,
         ape_child_node_id = ape_child_node_id,
         ape_cladewise_edge_rank = ape_cladewise_edge_rank,
@@ -59,24 +59,24 @@ function phyloref_edge_table(tree::CompactTree; edges::Union{Nothing, AbstractVe
     )
 end
 
-function attach_R_node_map(df::AbstractDataFrame, tree::CompactTree; node_col::Union{Symbol, AbstractString} = :node_id, map::PhyloRef = build_phyloref(tree), prefix::AbstractString = "R_")
+function attach_ape_node_map(df::AbstractDataFrame, tree::CompactTree; node_col::Union{Symbol, AbstractString} = :node_id, map::PhyloRef = build_phyloref(tree), prefix::AbstractString = "ape_")
     col = Symbol(node_col)
     col in propertynames(df) || throw(ArgumentError("node_col=$node_col is not present in the DataFrame"))
     out = DataFrame(df)
     nodes = Int.(out[!, col])
-    R_node_vals = Vector{Int}(undef, length(nodes))
+    ape_node_vals = Vector{Int}(undef, length(nodes))
     is_tip_vals = Vector{Bool}(undef, length(nodes))
     label_vals = Vector{String}(undef, length(nodes))
     tipX_vals = Vector{String}(undef, length(nodes))
     tipY_vals = Vector{String}(undef, length(nodes))
     @inbounds for (i, node) in enumerate(nodes)
         1 <= node <= tree.nnodes || throw(ArgumentError("node id $node from column $node_col is outside 1:$(tree.nnodes)"))
-        R_node_vals[i] = map.ape_node_ids[node]
+        ape_node_vals[i] = map.ape_node_ids[node]
         is_tip_vals[i] = tree.is_tip[node]
         label_vals[i] = tree.node_labels[node]
         tipX_vals[i], tipY_vals[i] = phylo_node_anchor(tree, node; map = map)
     end
-    out[!, Symbol(prefix, "node_id")] = R_node_vals
+    out[!, Symbol(prefix, "node_id")] = ape_node_vals
     out[!, Symbol(prefix, "is_tip")] = is_tip_vals
     out[!, Symbol(prefix, "label")] = label_vals
     out[!, Symbol(prefix, "tipX")] = tipX_vals
@@ -84,14 +84,14 @@ function attach_R_node_map(df::AbstractDataFrame, tree::CompactTree; node_col::U
     return out
 end
 
-function attach_R_edge_map(df::AbstractDataFrame, tree::CompactTree; edge_col::Union{Symbol, AbstractString} = :edge_id, order::Symbol = :postorder, map::PhyloRef = build_phyloref(tree), prefix::AbstractString = "R_")
+function attach_ape_edge_map(df::AbstractDataFrame, tree::CompactTree; edge_col::Union{Symbol, AbstractString} = :edge_id, order::Symbol = :postorder, map::PhyloRef = build_phyloref(tree), prefix::AbstractString = "ape_")
     col = Symbol(edge_col)
     col in propertynames(df) || throw(ArgumentError("edge_col=$edge_col is not present in the DataFrame"))
     out = DataFrame(df)
     edges = Int.(out[!, col])
-    R_edge_vals = Vector{Int}(undef, length(edges))
-    R_parent_vals = Vector{Int}(undef, length(edges))
-    R_child_vals = Vector{Int}(undef, length(edges))
+    ape_edge_vals = Vector{Int}(undef, length(edges))
+    ape_parent_vals = Vector{Int}(undef, length(edges))
+    ape_child_vals = Vector{Int}(undef, length(edges))
     branch_length_vals = Vector{Float64}(undef, length(edges))
     tipX_vals = Vector{String}(undef, length(edges))
     tipY_vals = Vector{String}(undef, length(edges))
@@ -100,16 +100,16 @@ function attach_R_edge_map(df::AbstractDataFrame, tree::CompactTree; edge_col::U
         1 <= edge <= tree.nedges || throw(ArgumentError("edge id $edge from column $edge_col is outside 1:$(tree.nedges)"))
         parent = Int(tree.parent_of_edge[edge])
         child = Int(tree.child_of_edge[edge])
-        R_edge_vals[i] = order === :cladewise ? map.ape_cladewise_edge_ranks[edge] : order === :postorder ? map.ape_postorder_edge_ranks[edge] : throw(ArgumentError("Unsupported order=$order; expected :cladewise or :postorder"))
-        R_parent_vals[i] = map.ape_node_ids[parent]
-        R_child_vals[i] = map.ape_node_ids[child]
+        ape_edge_vals[i] = ape_edge_id(tree, edge; order = order, map = map)
+        ape_parent_vals[i] = map.ape_node_ids[parent]
+        ape_child_vals[i] = map.ape_node_ids[child]
         branch_length_vals[i] = tree.edge_length[edge]
         tipX_vals[i], tipY_vals[i] = phylo_branch_anchor(tree, edge; map = map)
         sig_vals[i] = phylo_edge_signature(tree, edge; map = map)
     end
-    out[!, Symbol(prefix, "edge_id")] = R_edge_vals
-    out[!, Symbol(prefix, "parent_node_id")] = R_parent_vals
-    out[!, Symbol(prefix, "child_node_id")] = R_child_vals
+    out[!, Symbol(prefix, "edge_id")] = ape_edge_vals
+    out[!, Symbol(prefix, "parent_node_id")] = ape_parent_vals
+    out[!, Symbol(prefix, "child_node_id")] = ape_child_vals
     out[!, :branch_length] = branch_length_vals
     out[!, :tipX] = tipX_vals
     out[!, :tipY] = tipY_vals

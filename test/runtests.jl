@@ -46,11 +46,16 @@ end
 
     map = build_phyloref(tree)
     @test map.ape_node_ids[Int(tree.root)] == tree.ntips + 1
-    @test phyloref_node_table(tree; map = map).ape_node_id[Int(tree.root)] == tree.ntips + 1
+    @test phyloref_node_table(tree; map = map).compact_node_id[Int(tree.root)] == Int(tree.root)
     edge_table = phyloref_edge_table(tree; map = map)
     @test "A|B" in edge_table.descendant_signature
     @test EvoKits.phylo_edges_from_signatures(tree, edge_table.descendant_signature; map = map) == collect(1:tree.nedges)
-    @test EvoKits.R_edge_matrix(tree; map = map) == [
+    @test ape_node_id(tree, Int(tree.root); map = map) == tree.ntips + 1
+    @test compact_node_id(tree, tree.ntips + 1; map = map) == Int(tree.root)
+    @test ape_edge_id(tree, 2; map = map) == 4
+    @test compact_edge_id(tree, 4; map = map) == 2
+    @test !(:preprocess_tree in names(EvoKits))
+    @test ape_edge_matrix(tree; map = map) == [
         5 6;
         6 1;
         6 2;
@@ -58,6 +63,10 @@ end
         7 3;
         7 4
     ]
+    node_attached = attach_ape_node_map(DataFrame(node_id = [Int(tree.root)]), tree; map = map)
+    @test node_attached.ape_node_id == [tree.ntips + 1]
+    edge_attached = attach_ape_edge_map(DataFrame(edge_id = [1]), tree; map = map)
+    @test edge_attached.ape_edge_id == [5]
 
     pruned = keep_tip(tree, ["A", "C", "D"])
     @test Set(pruned.tip_labels) == Set(["A", "C", "D"])
