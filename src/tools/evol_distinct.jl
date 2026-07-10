@@ -1,0 +1,116 @@
+Base.@kwdef struct EvolutionaryDistinctivenessResult
+    tip_labels::Vector{String} = String[]
+    scores::Vector{Float64} = Float64[]
+    type::Symbol = :unknown
+    scale::Bool = false
+    use_branch_lengths::Bool = true
+end
+
+@inline function _ed_normalize_type(type::Symbol)
+    type === :equal_splits && return type
+    type === :fair_proportion && return type
+    type === :fair_proportions && return :fair_proportion
+    type === :fairproportion && return :fair_proportion
+    type === :fp && return :fair_proportion
+    type === :es && return :equal_splits
+    throw(ArgumentError("type must be :equal_splits or :fair_proportion"))
+end
+
+@inline function _ed_scale_factor(tree::CompactTree)
+    total = 0.0
+    @inbounds for edge in 1:tree.nedges
+        len = tree.edge_length[edge]
+        isfinite(len) || throw(ArgumentError("tree contains non-finite branch lengths"))
+        total += len
+    end
+    total > 0.0 || throw(ArgumentError("cannot scale a tree with zero total branch length"))
+    tip_depth = 0.0
+    ultrametric = true
+    if tree.ntips > 0
+        first_tip = Int(tree.tip_ids[1])
+        tip_depth = tree.dist_from_root[first_tip]
+        atol = max(1e-8, 1e-8 * max(abs(tip_depth), 1.0))
+        @inbounds for tip in tree.tip_ids
+            if abs(tree.dist_from_root[Int(tip)] - tip_depth) > atol
+                ultrametric = false
+                break
+            end
+        end
+    end
+    if ultrametric
+        tip_depth > 0.0 || throw(ArgumentError("cannot scale an ultrametric tree with zero depth"))
+        return 1.0 / tip_depth
+    end
+    return 1.0 / total
+end
+
+function _ed_score_fair_proportion!(scores::Vector{Float64}, tree::CompactTree, desc_count::Vector{Int32}, scale_factor::Float64, use_branch_lengths::Bool)
+    acc = zeros(Float64, tree.nnodes)
+    @inbounds for node in tree.preorder
+        inode = Int(node)
+        base = acc[inode]
+        first_edge = Int(tree.first_child_edge[inode])
+        first_edge == 0 && continue
+        last_edge = Int(tree.last_child_edge[inode])
+        for edge in first_edge:last_edge
+            child = Int(tree.child_of_edge[edge])
+            len = use_branch_lengths ? tree.edge_length[edge] * scale_factor : 1.0
+            acc[child] = base + len / Float64(desc_count[child])
+        end
+    end
+    @inbounds for (i, tip) in enumerate(tree.tip_ids)
+        scores[i] = acc[Int(tip)]
+    end
+    return scores
+end
+
+function _ed_score_equal_splits!(scores::Vector{Float64}, tree::CompactTree, scale_factor::Float64, use_branch_lengths::Bool)
+    acc = zeros(Float64, tree.nnodes)
+    weight = zeros(Float64, tree.nnodes)
+    weight[Int(tree.root)] = 1.0
+    min_weight = 1.0e-300
+    @inbounds for node in tree.preorder
+        inode = Int(node)
+        first_edge = Int(tree.first_child_edge[inode])
+        first_edge == 0 && continue
+        last_edge = Int(tree.last_child_edge[inode])
+        degree = last_edge - first_edge + 1
+        parent_weight = weight[inode]
+        child_weight = parent_weight <= min_weight ? 0.0 : parent_weight / Float64(degree)
+        for edge in first_edge:last_edge
+            child = Int(tree.child_of_edge[edge])
+            len = use_branch_lengths ? tree.edge_length[edge] * scale_factor : 1.0
+            acc[child] = acc[inode] + (tree.is_tip[child] ? len : len * child_weight)
+            weight[child] = child_weight
+        end
+    end
+    @inbounds for (i, tip) in enumerate(tree.tip_ids)
+        scores[i] = acc[Int(tip)]
+    end
+    return scores
+end
+
+function evol_distinct(tree::CompactTree; type::Symbol = :equal_splits, scale::Bool = false, use_branch_lengths::Bool = true)
+    ed_type = _ed_normalize_type(type)
+    tree.ntips > 0 || throw(ArgumentError("tree must contain at least one tip"))
+    scale_factor = (scale && use_branch_lengths) ? _ed_scale_factor(tree) : 1.0
+    scores = Vector{Float64}(undef, tree.ntips)
+    if ed_type === :fair_proportion
+        desc_count = _tools_descendant_tip_counts(tree)
+        _ed_score_fair_proportion!(scores, tree, desc_count, scale_factor, use_branch_lengths)
+    else
+        _ed_score_equal_splits!(scores, tree, scale_factor, use_branch_lengths)
+    end
+    return EvolutionaryDistinctivenessResult(
+        tip_labels = copy(tree.tip_labels),
+        scores = scores,
+        type = ed_type,
+        scale = scale,
+        use_branch_lengths = use_branch_lengths,
+    )
+end
+
+function evol_distinct_dataframe(tree::CompactTree; kwargs...)
+    result = evol_distinct(tree; kwargs...)
+    return DataFrame(Species = result.tip_labels, w = result.scores)
+end
