@@ -38,3 +38,38 @@ using Random
     @test length(mntdres.mntd_obs) == 2
     @test length(spdres.pd_obs) == 2
 end
+
+@testset "PhyloRef and tree pruning" begin
+    tree_path = joinpath(mktempdir(), "mapping_tree.nwk")
+    write(tree_path, "((A:1,B:1):1,(C:1,D:1):1);")
+    tree = to_compact_tree(load_newick_tree(tree_path))
+
+    map = build_phyloref(tree)
+    @test map.ape_node_ids[Int(tree.root)] == tree.ntips + 1
+    @test phyloref_node_table(tree; map = map).ape_node_id[Int(tree.root)] == tree.ntips + 1
+    edge_table = phyloref_edge_table(tree; map = map)
+    @test "A|B" in edge_table.descendant_signature
+    @test EvoKits.phylo_edges_from_signatures(tree, edge_table.descendant_signature; map = map) == collect(1:tree.nedges)
+    @test EvoKits.R_edge_matrix(tree; map = map) == [
+        5 6;
+        6 1;
+        6 2;
+        5 7;
+        7 3;
+        7 4
+    ]
+
+    pruned = keep_tip(tree, ["A", "C", "D"])
+    @test Set(pruned.tip_labels) == Set(["A", "C", "D"])
+    @test pruned.ntips == 3
+    @test all(isapprox.(pruned.dist_from_root[pruned.tip_ids], 2.0))
+    a_node = Int(pruned.tipname_to_id["A"])
+    a_edge = findfirst(==(Int32(a_node)), pruned.child_of_edge)
+    @test pruned.edge_length[a_edge] == 2.0
+
+    dropped = drop_tip(tree, "B")
+    @test Set(dropped.tip_labels) == Set(["A", "C", "D"])
+    @test all(isapprox.(dropped.dist_from_root[dropped.tip_ids], 2.0))
+    @test_throws ArgumentError keep_tip(tree, ["A", "missing"])
+    @test_throws ArgumentError drop_tip(tree, tree.tip_labels)
+end

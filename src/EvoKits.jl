@@ -1,9 +1,12 @@
 module EvoKits
 
+using MKL
+using CSV
 using DataFrames
 using Distributions
 using LinearAlgebra
 using NewickTree
+using NLopt
 using Optim
 using Random
 using Statistics
@@ -14,6 +17,10 @@ export to_compact_tree
 export from_compact_tree
 export save_newick_tree
 export preprocess_tree
+export PhyloRef
+export build_phyloref
+export phyloref_node_table
+export phyloref_edge_table
 export align_traits_to_tree
 export compute_aic
 export compute_aicc
@@ -25,6 +32,8 @@ export evol_distinct
 export evol_distinct_dataframe
 export make_ultrametric
 export multi2di
+export keep_tip
+export drop_tip
 export pd
 export pd_dataframe
 export ses_pd
@@ -39,11 +48,13 @@ include("io.jl")
 include("checks.jl")
 include("criteria.jl")
 include("trait_alignment.jl")
+include("phyloref.jl")
 include("tools/common.jl")
 include("tools/pagel_lambda.jl")
 include("tools/evol_distinct.jl")
 include("tools/make_ultrametric.jl")
 include("tools/multi2di.jl")
+include("tree_pruning.jl")
 include("tools/ses_pd.jl")
 include("tools/ses_mpd.jl")
 include("tools/ses_mntd.jl")
