@@ -9,6 +9,9 @@ It is an independent package extracted from the reusable tree-tooling layer of
 EvoTraits. EvoKits does not include EvoTraits' continuous or discrete model
 engines, ancestral reconstruction workflows, or their result types.
 
+The stable public conventions are documented in [API.md](API.md): tip and
+community ordering, result fields, RNG behavior, and empty/singleton policies.
+
 ## Install and Load
 
 For local development:
@@ -227,6 +230,38 @@ For category-based workflows, use `PextDistribution`,
 `calc_pext_distribution`, `load_pext_distribution_csv`, and `sample_pext`.
 `reorder_pext_to_tree` validates species coverage before returning values in
 tree order.
+
+## End-to-End Example
+
+This example exercises the tree, community, and restricted trait layers in one
+session:
+
+```julia
+using EvoKits
+using Random
+
+save_newick_tree("example.nwk", "((A:1,B:1):1,(C:1,D:1):1);")
+tree = to_compact_tree(load_newick_tree("example.nwk"))
+
+community = [
+    1 1 0 0
+    0 1 1 0
+]
+pd_result = pd(community, tree)
+beta = phylosor(community, tree)
+rao = raoD(community, tree)
+
+trait = [1.0, 2.0, 3.0, 4.0]
+pic = phylogenetic_contrasts(tree, trait)
+signal = phylogenetic_signal_k(tree, trait;
+    permutations = 99, rng = MersenneTwister(7))
+
+pd_result.pd
+beta[1, 2]
+rao.Dkk
+pic.contrasts
+signal.k
+```
 
 ## Scope
 

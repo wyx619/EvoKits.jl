@@ -231,6 +231,7 @@ function pd_calc(tree::CompactTree, tips;
 )
     row = zeros(Float64, tree.ntips)
     values = tips isa AbstractString ? [String(tips)] : collect(tips)
+    length(unique(values)) == length(values) || throw(ArgumentError("tips must not contain duplicates"))
     for value in values
         position = if value isa Integer
             1 <= value <= tree.ntips || throw(ArgumentError("tip position is outside the tree"))
