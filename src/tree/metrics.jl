@@ -4,6 +4,7 @@ Base.@kwdef struct EvolutionaryDistinctivenessResult
     type::Symbol = :unknown
     scale::Bool = false
     use_branch_lengths::Bool = true
+    polytomy_correction::Symbol = :none
 end
 
 @inline function _ed_normalize_type(type::Symbol)
@@ -44,7 +45,24 @@ end
     return 1.0 / total
 end
 
-function _ed_score_fair_proportion!(scores::Vector{Float64}, tree::CompactTree, desc_count::Vector{Int32}, scale_factor::Float64, use_branch_lengths::Bool)
+function _ed_normalize_polytomy_correction(value)
+    correction = Symbol(lowercase(String(value)))
+    correction in (:isaac, :mooers, :none) || throw(ArgumentError("polytomy_correction must be :isaac, :mooers, or :none"))
+    return correction
+end
+
+function _ed_correction_factor(parent_degree::Int, correction::Symbol)
+    parent_degree <= 2 && return 1.0
+    correction === :none && return 1.0
+    if correction === :isaac
+        parent_degree > 57 && return 0.0
+        return 1.081 - 0.267 * log(parent_degree)
+    end
+    harmonic = sum(inv(k) for k in 2:parent_degree)
+    return (parent_degree - 1) / (parent_degree * harmonic)
+end
+
+function _ed_score_fair_proportion!(scores::Vector{Float64}, tree::CompactTree, desc_count::Vector{Int32}, scale_factor::Float64, use_branch_lengths::Bool, polytomy_correction::Symbol)
     acc = zeros(Float64, tree.nnodes)
     @inbounds for node in tree.preorder
         inode = Int(node)
@@ -55,6 +73,7 @@ function _ed_score_fair_proportion!(scores::Vector{Float64}, tree::CompactTree, 
         for edge in first_edge:last_edge
             child = Int(tree.child_of_edge[edge])
             len = use_branch_lengths ? tree.edge_length[edge] * scale_factor : 1.0
+            len *= _ed_correction_factor(last_edge - first_edge + 1, polytomy_correction)
             acc[child] = base + len / Float64(desc_count[child])
         end
     end
@@ -90,14 +109,15 @@ function _ed_score_equal_splits!(scores::Vector{Float64}, tree::CompactTree, sca
     return scores
 end
 
-function evol_distinct(tree::CompactTree; type::Symbol = :equal_splits, scale::Bool = false, use_branch_lengths::Bool = true)
+function evol_distinct(tree::CompactTree; type::Symbol = :equal_splits, scale::Bool = false, use_branch_lengths::Bool = true, polytomy_correction = :none)
     ed_type = _ed_normalize_type(type)
+    correction = _ed_normalize_polytomy_correction(polytomy_correction)
     tree.ntips > 0 || throw(ArgumentError("tree must contain at least one tip"))
     scale_factor = (scale && use_branch_lengths) ? _ed_scale_factor(tree) : 1.0
     scores = Vector{Float64}(undef, tree.ntips)
     if ed_type === :fair_proportion
         desc_count = _tools_descendant_tip_counts(tree)
-        _ed_score_fair_proportion!(scores, tree, desc_count, scale_factor, use_branch_lengths)
+        _ed_score_fair_proportion!(scores, tree, desc_count, scale_factor, use_branch_lengths, correction)
     else
         _ed_score_equal_splits!(scores, tree, scale_factor, use_branch_lengths)
     end
@@ -107,6 +127,7 @@ function evol_distinct(tree::CompactTree; type::Symbol = :equal_splits, scale::B
         type = ed_type,
         scale = scale,
         use_branch_lengths = use_branch_lengths,
+        polytomy_correction = correction,
     )
 end
 

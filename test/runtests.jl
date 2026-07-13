@@ -82,3 +82,219 @@ end
     @test_throws ArgumentError keep_tip(tree, ["A", "missing"])
     @test_throws ArgumentError drop_tip(tree, tree.tip_labels)
 end
+
+@testset "EDGE2" begin
+    tree_path = joinpath(mktempdir(), "edge2_tree.nwk")
+    write(tree_path, "((A:1,B:1):1,(C:1,D:1):1);")
+    tree = to_compact_tree(load_newick_tree(tree_path))
+    result = edge2_mod(tree, [0.1, 0.2, 0.3, 0.4])
+
+    @test result.species == ["A", "B", "C", "D"]
+    @test result.tbl == [1.0, 1.0, 1.0, 1.0]
+    @test result.edge ≈ [0.12, 0.22, 0.42, 0.52]
+    @test result.ed ≈ [1.2, 1.1, 1.4, 1.3]
+    @test result.pd == 6.0
+    @test result.epd_loss ≈ 1.14
+    @test result.EDGE === result.edge
+    @test result.PD == result.pd
+    @test_throws ArgumentError edge2_mod(tree, [0.1, 0.2])
+    @test_throws ArgumentError edge2_mod(tree, [0.1, 0.2, 0.0, 0.4])
+
+    distribution = PextDistribution(
+        ["LC", "NT", "VU", "EN", "CR"],
+        [0.1, 0.2, 0.3, 0.4, 0.5],
+    )
+    sampled = sample_pext(["LC", "EX", "thr", "not", "unknown"], distribution; rng = MersenneTwister(2))
+    @test sampled[2] == 1.0
+    @test all((0.0 .< sampled) .& (sampled .<= 1.0))
+    @test reorder_pext_to_tree(tree, ["D", "A", "B", "C"], [0.4, 0.1, 0.2, 0.3]) == [0.1, 0.2, 0.3, 0.4]
+    @test_throws ArgumentError reorder_pext_to_tree(tree, ["A"], [0.1])
+    adjusted = score_adjust([0.1, 0.3, 1.0], distribution, 0.2)
+    @test length(adjusted) == 3
+    @test adjusted[3] == 1.0
+    @test all((0.0 .< adjusted) .& (adjusted .<= 1.0))
+
+    csv_path = joinpath(mktempdir(), "pext.csv")
+    write(csv_path, "RL.cat,pext\nLC,0.1\nNT,0.2\nVU,0.3\nEN,0.4\nCR,0.5\n")
+    loaded = load_pext_distribution_csv(csv_path)
+    @test loaded.categories == distribution.categories
+    @test loaded.pext_values == distribution.pext_values
+
+    generated = calc_pext_distribution(n_tips = 50; rng = MersenneTwister(3))
+    @test length(generated.categories) == 50
+    @test length(generated.pext_values) == 50
+    @test all((0.0 .< generated.pext_values) .& (generated.pext_values .<= 1.0))
+end
+
+@testset "NRI and NTI local null model" begin
+    tree = to_compact_tree(load_newick_tree(joinpath(@__DIR__, "tiny.nwk")))
+    mpd, mntd = EvoKits._community_metrics(tree, [1, 2, 3])
+    @test mpd ≈ 10 / 3
+    @test mntd ≈ 8 / 3
+
+    result1 = nri_nti(tree, [1, 2, 3], ["A", "B"]; nreps = 30, seed = 41)
+    result2 = nri_nti(tree, [1, 2, 3], [1, 2]; nreps = 30, seed = 41)
+    @test result1.nri == result2.nri
+    @test result1.nti == result2.nti
+    @test result1.status == :ok
+    @test result1.NRI == result1.nri
+    @test result1.pool_richness == 3
+    @test result1.observed_richness == 2
+    @test stable_grid_seed(20260713, "grid-1") == stable_grid_seed(20260713, "grid-1")
+    @test stable_grid_seed(20260713, "grid-1") != stable_grid_seed(20260713, "grid-2")
+
+    degenerate = nri_nti(tree, [1, 2], [1, 2]; nreps = 10, seed = 1)
+    @test degenerate.status == :null_sd_zero
+    @test isnan(degenerate.nri)
+    @test_throws ArgumentError nri_nti(tree, [1, 2], [1, 3]; nreps = 10)
+end
+
+@testset "Phylogenetic D" begin
+    tree_path = joinpath(mktempdir(), "phylo_d_tree.nwk")
+    write(tree_path, "((A:1,B:1):1,(C:1,D:1):1);")
+    tree = to_compact_tree(load_newick_tree(tree_path))
+
+    result = phylo_d(tree, [1, 1, 0, 0]; permutations = 20, rng = MersenneTwister(11))
+    @test result.observed ≈ 1.0
+    @test result.d == result.D == result.DEstimate
+    @test result.Pval1 == result.p_random
+    @test result.Pval0 == result.p_brownian
+    @test length(result.random_changes) == 20
+    @test length(result.brownian_changes) == 20
+    @test result.status == :ok
+
+    stored = phylo_d(tree, [true, false, true, false]; permutations = 5, rng = MersenneTwister(12), store_nodal_values = true)
+    @test size(stored.random_nodal_values) == (3, 5)
+    @test size(stored.brownian_nodal_values) == (3, 5)
+    @test stored.Parameters.Observed == stored.observed
+    @test length(stored.NodalVals.observed) == 3
+
+    df = DataFrame(species = ["D", "A", "C", "B"], state = [0, 1, 0, 1])
+    aligned = phylo_d(tree, df, :state; taxon_col = :species, permutations = 5, rng = MersenneTwister(13))
+    @test aligned.observed ≈ result.observed
+
+    polytomy_path = joinpath(mktempdir(), "phylo_d_polytomy.nwk")
+    write(polytomy_path, "(A:1,B:1,C:1);")
+    polytomy = to_compact_tree(load_newick_tree(polytomy_path))
+    poly_result = phylo_d(polytomy, [1, 0, 0]; permutations = 5, rng = MersenneTwister(14))
+    @test poly_result.observed ≈ 4 / 3
+
+    subset = phylo_d_subset(tree, [1, 1, 0, 0]; permutations = 5, rng = MersenneTwister(15), min_tips = 2)
+    @test length(subset.raw) == 3
+    @test subset.tips == [2, 2, 4]
+    @test subset.nodes == [1, 1, 3]
+    @test subset.d[3] isa Float64
+
+    @test_throws ArgumentError phylo_d(tree, [1, 1, 1, 1]; permutations = 5)
+    @test_throws ArgumentError phylo_d(tree, [1, 1, 0]; permutations = 5)
+    @test_throws ArgumentError phylo_d(tree, [1, 1, 0, 0]; permutations = 5, random_weights = [1.0, -1.0, 1.0, 1.0])
+end
+
+@testset "Tree kernel and shape" begin
+    tree_path = joinpath(mktempdir(), "kernel_tree.nwk")
+    write(tree_path, "((A:1,B:1):1,(C:1,D:1):1);")
+    tree = to_compact_tree(load_newick_tree(tree_path))
+
+    @test mrca(tree, 1, 2) == Int(tree.parent_of_node[Int(tree.tip_ids[1])])
+    @test mrca(tree, ["A", "B"]) == mrca(tree, 1, 2)
+    @test distance(tree, 1, 2) == 2.0
+    @test distance(tree, 1, 2; weighted = false) == 2
+    @test pairwise_distance(tree) == [0.0 2.0 4.0 4.0; 2.0 0.0 4.0 4.0; 4.0 4.0 0.0 2.0; 4.0 4.0 2.0 0.0]
+    @test distances_from_root(tree; weighted = false)[Int.(tree.tip_ids)] == [2, 2, 2, 2]
+    @test distances_to_tip(tree, "A") == [0.0, 2.0, 4.0, 4.0]
+
+    root = Int(tree.root)
+    @test descendant_tips(tree, root; labels = true) == tree.tip_labels
+    @test length(clade_members(tree)) == length(tree.postorder_internal)
+    @test subtree_at_node(tree, root).tip_labels == tree.tip_labels
+
+    @test tree_imbalance(tree; metric = :sackin) == 8.0
+    @test tree_imbalance(tree; metric = :colless) == 0.0
+    @test tree_imbalance(tree; metric = :colless_normalized) == 0.0
+    @test tree_imbalance(tree; metric = :blum) ≈ log(3.0)
+    @test gamma_statistic(tree) ≈ -0.8164965809277259
+    ltt = lineages_through_time(tree; times = [0.0, 1.0, 2.0])
+    @test ltt.lineages_at_query == [2, 4, 4]
+end
+
+@testset "P1 community beta and diversity" begin
+    path = joinpath(mktempdir(), "star.nwk")
+    write(path, "(A:1,B:1,C:1);")
+    tree = to_compact_tree(load_newick_tree(path))
+    comm = [1 1 0; 0 1 1]
+
+    @test comdist(comm, tree)[1, 2] == 1.5
+    @test comdist(comm[:, [3, 1, 2]], tree; tip_labels = ["C", "A", "B"])[1, 2] == 1.5
+    @test comdistnt(comm, tree)[1, 2] == 1.0
+    @test unifrac(comm, tree)[1, 2] ≈ 2 / 3
+    @test phylosor(comm, tree)[1, 2] ≈ 0.5
+    rao = raoD(comm, tree)
+    @test rao.Dkk == [0.5, 0.5]
+    @test rao.Dkl[1, 2] == 0.75
+    @test psv(comm, tree).psv ≈ [1.0, 1.0]
+    @test psr(comm, tree).psr ≈ [2.0, 2.0]
+    @test pse(comm, tree).pse ≈ [1.0, 1.0]
+    @test psc(comm, tree).psc ≈ [1.0, 1.0]
+    @test expected_pd(tree).expected_pd ≈ [1.0, 2.0, 3.0]
+    @test edge_abundance_distribution(tree).num_children == [1, 1, 1]
+    @test pd_calc(comm, tree; variant = :tip).pd == [2.0, 2.0]
+    @test pd_calc(comm, tree; variant = :tbl).pd == [2.0, 2.0]
+    @test pd_calc(comm, tree; variant = :sbl).pd == [0.0, 0.0]
+    @test pd_calc(comm, tree; variant = :ueh).pd == [2.0, 2.0]
+    boot = pd_bootstrap(comm, tree; reps = 3, rng = MersenneTwister(7))
+    @test size(boot.replicates) == (2, 3)
+    @test_throws ArgumentError comdist([1 -1 0], tree)
+
+    balanced_path = joinpath(mktempdir(), "balanced_reference.nwk")
+    write(balanced_path, "((A:1,B:1):1,(C:1,D:1):1);")
+    balanced = to_compact_tree(load_newick_tree(balanced_path))
+    @test psv([1 1 0 0; 1 0 1 0; 1 1 1 1], balanced).variance ≈ [1 / 18, 1 / 18, 0.0]
+    @test expected_pd(balanced).expected_pd ≈ [1.875, 3.5, 4.875, 6.0]
+    @test expected_pd(balanced).variance_pd ≈ [3.2109375, 2.875, 1.3359375, 0.0]
+    @test expected_pd(balanced; upper_bound = false).variance_pd ≈ [2.3671875, 2.375, 1.2421875, 0.0]
+    @test edge_abundance_distribution(balanced).num_children == [2, 2, 1, 1, 1, 1]
+
+    empty = [0 0 0 0]
+    singleton = [1 0 0 0]
+    @test pd(empty, balanced).pd == [0.0]
+    @test pd(singleton, balanced).pd == [2.0]
+    @test isnan(ses_mpd(singleton, balanced; runs = 3, rng = MersenneTwister(1)).mpd_obs[1])
+    @test isnan(comdist(empty, balanced)[1, 1])
+    @test unifrac(empty, balanced)[1, 1] == 0.0
+    @test phylosor(empty, balanced)[1, 1] == 0.0
+    @test isnan(psv(singleton, balanced).psv[1])
+    nonultra_path = joinpath(mktempdir(), "nonultrametric.nwk")
+    write(nonultra_path, "((A:1,B:2):1,(C:1,D:1):1);")
+    nonultra = to_compact_tree(load_newick_tree(nonultra_path))
+    @test_throws ArgumentError raoD([1 0 0 0], nonultra)
+end
+
+@testset "Caper ED polytomy corrections" begin
+    path = joinpath(mktempdir(), "ed_polytomy.nwk")
+    write(path, "(A:1,B:1,C:1);")
+    tree = to_compact_tree(load_newick_tree(path))
+    none = evol_distinct(tree; type = :fair_proportion, polytomy_correction = :none)
+    isaac = evol_distinct(tree; type = :fair_proportion, polytomy_correction = :isaac)
+    mooers = evol_distinct(tree; type = :fair_proportion, polytomy_correction = :mooers)
+    @test none.scores == [1.0, 1.0, 1.0]
+    @test isaac.scores ≈ fill(1.081 - 0.267 * log(3), 3)
+    @test mooers.scores ≈ fill(0.8, 3)
+    @test_throws ArgumentError evol_distinct(tree; polytomy_correction = :bad)
+end
+
+@testset "P2 restricted K and PIC" begin
+    path = joinpath(mktempdir(), "pic.nwk")
+    write(path, "((A:1,B:1):1,(C:1,D:1):1);")
+    tree = to_compact_tree(load_newick_tree(path))
+    two_path = joinpath(mktempdir(), "two.nwk")
+    write(two_path, "(A:1,B:1);")
+    two = to_compact_tree(load_newick_tree(two_path))
+    pic_two = phylogenetic_contrasts(two, [1.0, 3.0])
+    @test pic_two.contrasts ≈ [-sqrt(2.0)]
+    @test pic_two.distances == [2.0]
+    @test phylogenetic_contrasts(two, [1.0, 3.0]; scaled = false).contrasts == [-2.0]
+    k = phylogenetic_signal_k(tree, [1.0, 2.0, 3.0, 4.0]; permutations = 20, rng = MersenneTwister(5))
+    @test k.valid_replicates == 20
+    @test isfinite(k.k)
+    @test_throws ArgumentError phylogenetic_contrasts(tree, [1.0, 2.0, 3.0, NaN])
+end
