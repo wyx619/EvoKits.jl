@@ -282,6 +282,17 @@ end
     @test_throws ArgumentError evol_distinct(tree; polytomy_correction = :bad)
 end
 
+@testset "Picante equal-splits ordering" begin
+    path = joinpath(mktempdir(), "ed_equal_splits.nwk")
+    write(path, "(((A:1,B:1):3,C:1):2,D:1);")
+    tree = to_compact_tree(load_newick_tree(path))
+
+    result = evol_distinct(tree; type = :equal_splits)
+    @test result.tip_labels == ["A", "B", "C", "D"]
+    @test result.scores ≈ [3.0, 3.0, 2.0, 1.0]
+    @test evol_distinct(tree; type = :equal_splits, use_branch_lengths = false).scores ≈ [1.75, 1.75, 1.5, 1.0]
+end
+
 @testset "P2 restricted K and PIC" begin
     path = joinpath(mktempdir(), "pic.nwk")
     write(path, "((A:1,B:1):1,(C:1,D:1):1);")

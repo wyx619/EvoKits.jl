@@ -84,27 +84,29 @@ function _ed_score_fair_proportion!(scores::Vector{Float64}, tree::CompactTree, 
 end
 
 function _ed_score_equal_splits!(scores::Vector{Float64}, tree::CompactTree, scale_factor::Float64, use_branch_lengths::Bool)
-    acc = zeros(Float64, tree.nnodes)
-    weight = zeros(Float64, tree.nnodes)
-    weight[Int(tree.root)] = 1.0
-    min_weight = 1.0e-300
-    @inbounds for node in tree.preorder
-        inode = Int(node)
-        first_edge = Int(tree.first_child_edge[inode])
-        first_edge == 0 && continue
-        last_edge = Int(tree.last_child_edge[inode])
-        degree = last_edge - first_edge + 1
-        parent_weight = weight[inode]
-        child_weight = parent_weight <= min_weight ? 0.0 : parent_weight / Float64(degree)
-        for edge in first_edge:last_edge
-            child = Int(tree.child_of_edge[edge])
-            len = use_branch_lengths ? tree.edge_length[edge] * scale_factor : 1.0
-            acc[child] = acc[inode] + (tree.is_tip[child] ? len : len * child_weight)
-            weight[child] = child_weight
-        end
+    # Picante assigns the smallest 0.5^n weight to the root-most internal
+    # edge and the largest 0.5 weight to the internal edge nearest the tip.
+    # Walk each tip path upward so this ordering is explicit and independent
+    # of the traversal used to build CompactTree.
+    edge_of_child = zeros(Int, tree.nnodes)
+    @inbounds for edge in 1:tree.nedges
+        edge_of_child[Int(tree.child_of_edge[edge])] = edge
     end
-    @inbounds for (i, tip) in enumerate(tree.tip_ids)
-        scores[i] = acc[Int(tip)]
+
+    @inbounds for (i, tip_id) in enumerate(tree.tip_ids)
+        tip = Int(tip_id)
+        pendant_edge = edge_of_child[tip]
+        score = use_branch_lengths ? tree.edge_length[pendant_edge] * scale_factor : 1.0
+        node = Int(tree.parent_of_node[tip])
+        weight = 0.5
+        while node != 0 && node != Int(tree.root)
+            edge = edge_of_child[node]
+            len = use_branch_lengths ? tree.edge_length[edge] * scale_factor : 1.0
+            score += len * weight
+            weight *= 0.5
+            node = Int(tree.parent_of_node[node])
+        end
+        scores[i] = score
     end
     return scores
 end
