@@ -81,6 +81,7 @@ export reorder_pext_to_tree
 export score_adjust
 export NriNtiResult
 export nri_nti
+export nri_nti_table
 export stable_grid_seed
 export comdist
 export comdistnt
@@ -137,6 +138,7 @@ include("community/mntd.jl")
 include("community/beta.jl")
 include("community/diversity.jl")
 include("community/nri_nti.jl")
+include("community/nri_nti_table.jl")
 include("community/edge2.jl")
 
 end

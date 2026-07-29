@@ -148,6 +148,36 @@ assume a global species pool or retain all null replicates in memory. The
 reference field names `NRI`, `NTI`, `MPD_obs`, and `MNTD_obs` are also available
 as compatibility properties.
 
+For a batch of spatial grids, pass `grid_id` so the global seed is stably
+derived per grid, independent of processing order. This is the convention used
+by the validated Swq workflow:
+
+```julia
+result = nri_nti(tree, pool, observed;
+    nreps = 999,
+    seed = 20260713,
+    grid_id = "1745",
+)
+```
+
+The effective derived seed is stored in `result.seed`. Do not combine `grid_id`
+with an explicit `rng`; an injected RNG already defines the random stream.
+
+For many grids, `nri_nti_table` accepts two standard delimited long tables with
+exactly the columns `grid_id,species`: one local-pool table and one
+observed-community table. Tables may be CSV, TSV, TXT, or another delimiter
+recognized by CSV.jl; use `delim = '\t'` when an explicit TSV delimiter is
+needed. Each grid must be a contiguous block in each file. Grids are processed
+in parallel when Julia starts with multiple threads.
+
+```julia
+batch = nri_nti_table(tree, "local_pool.tsv", "observed_community.tsv";
+                        nreps = 999, seed = 20260713, threaded = true,
+                        delim = '\t')
+batch.grid_ids
+batch.results
+```
+
 ## Comparative Utility
 
 ### Pagel's lambda

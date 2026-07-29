@@ -147,6 +147,85 @@ end
     @test degenerate.status == :null_sd_zero
     @test isnan(degenerate.nri)
     @test_throws ArgumentError nri_nti(tree, [1, 2], [1, 3]; nreps = 10)
+
+    grid_seed = stable_grid_seed(20260713, "grid-1")
+    grid_result = nri_nti(tree, [1, 2, 3], [1, 2]; nreps = 30,
+                          seed = 20260713, grid_id = "grid-1")
+    manual_seed_result = nri_nti(tree, [1, 2, 3], [1, 2]; nreps = 30,
+                                  seed = grid_seed)
+    @test grid_result.observed_mpd == manual_seed_result.observed_mpd
+    @test grid_result.observed_mntd == manual_seed_result.observed_mntd
+    @test grid_result.null_mpd_mean == manual_seed_result.null_mpd_mean
+    @test grid_result.null_mntd_mean == manual_seed_result.null_mntd_mean
+    @test grid_result.nri == manual_seed_result.nri
+    @test grid_result.nti == manual_seed_result.nti
+    @test grid_result.seed == grid_seed
+    @test_throws ArgumentError nri_nti(tree, [1, 2, 3], [1, 2]; nreps = 30,
+                                       rng = MersenneTwister(1), grid_id = "grid-1")
+
+    table_dir = mktempdir()
+    pool_table = joinpath(table_dir, "pool.tsv")
+    observed_table = joinpath(table_dir, "observed.tsv")
+    write(pool_table, "grid_id\tspecies\ngrid-a\tA\ngrid-a\tB\ngrid-a\tC\ngrid-b\tA\ngrid-b\tB\ngrid-b\tC\n")
+    write(observed_table, "grid_id\tspecies\ngrid-a\tA\ngrid-a\tB\ngrid-b\tB\ngrid-b\tC\n")
+    direct_csv = nri_nti(tree, ["A", "B", "C"], ["A", "B"];
+                         nreps = 30, seed = 71, grid_id = "grid-a")
+    table_serial = nri_nti_table(tree, pool_table, observed_table;
+                                  nreps = 30, seed = 71, threaded = false, delim = '\t')
+    table_threaded = nri_nti_table(tree, pool_table, observed_table;
+                                    nreps = 30, seed = 71, threaded = true, delim = '\t')
+    @test table_serial.grid_ids == ["grid-a", "grid-b"]
+    @test table_serial.results[1].nri == direct_csv.nri
+    @test table_serial.results[1].nti == direct_csv.nti
+    @test table_threaded.results == table_serial.results
+
+    auto_pool_table = joinpath(table_dir, "pool.txt")
+    auto_observed_table = joinpath(table_dir, "observed.txt")
+    write(auto_pool_table, "grid_id,species\ngrid-a,A\ngrid-a,B\ngrid-a,C\n")
+    write(auto_observed_table, "grid_id,species\ngrid-a,A\ngrid-a,B\n")
+    auto_table = nri_nti_table(tree, auto_pool_table, auto_observed_table;
+                                nreps = 30, seed = 71, threaded = false)
+    @test auto_table.results[1] == direct_csv
+
+    noncontiguous_pool_table = joinpath(table_dir, "noncontiguous_pool.txt")
+    write(noncontiguous_pool_table, "grid_id,species\ngrid-a,A\ngrid-b,A\ngrid-a,B\n")
+    @test_throws ArgumentError nri_nti_table(tree, noncontiguous_pool_table, observed_table;
+                                              nreps = 10, threaded = false, delim = ',')
+
+    swq_like_path = joinpath(mktempdir(), "swq_like.nwk")
+    write(swq_like_path,
+          "(((A:0.1,B:0.2):1,(C:0.3,D:0.4):1):1,((E:0.5,F:0.6):1,(G:0.7,H:0.8):1):1);")
+    swq_like_tree = to_compact_tree(load_newick_tree(swq_like_path))
+    query_index = EvoKits._build_tree_query_index(swq_like_tree)
+    workspace = EvoKits._NriMetricsWorkspace(swq_like_tree)
+    rng = MersenneTwister(20260729)
+    for _ in 1:100
+        selected = randperm(rng, swq_like_tree.ntips)[1:rand(rng, 2:swq_like_tree.ntips)]
+        virtual_mpd, virtual_mntd = EvoKits._nri_community_metrics!(
+            swq_like_tree, selected, query_index, workspace,
+        )
+        reference_mpd, reference_mntd = EvoKits._community_metrics(
+            swq_like_tree, selected, query_index,
+        )
+
+        brute_mpd_total = 0.0
+        brute_mntd_total = 0.0
+        for i in eachindex(selected)
+            nearest = Inf
+            for j in eachindex(selected)
+                i == j && continue
+                value = distance(swq_like_tree, selected[i], selected[j])
+                brute_mpd_total += i < j ? value : 0.0
+                nearest = min(nearest, value)
+            end
+            brute_mntd_total += nearest
+        end
+        pair_count = length(selected) * (length(selected) - 1) / 2
+        @test virtual_mpd ≈ brute_mpd_total / pair_count atol = 1e-12 rtol = 1e-12
+        @test virtual_mntd ≈ brute_mntd_total / length(selected) atol = 1e-12 rtol = 1e-12
+        @test virtual_mpd ≈ reference_mpd atol = 1e-12 rtol = 1e-12
+        @test virtual_mntd ≈ reference_mntd atol = 1e-12 rtol = 1e-12
+    end
 end
 
 @testset "Phylogenetic D" begin
