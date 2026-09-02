@@ -1,7 +1,7 @@
 name = "EvoKits"
 uuid = "9957b3fd-8240-4e78-b8cc-48cab0c87d41"
-version = "1.0.0"
-authors = ["wyx619"]
+version = "1.1.0"
+authors = ["Yuxuan Wang <wyx1743@gmail.com>"]
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
