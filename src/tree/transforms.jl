@@ -55,5 +55,5 @@ function make_ultrametric(tree::CompactTree)
 end
 
 function make_ultrametric(tree::T) where {T <: NewickTree.Node}
-    return from_compact_tree(make_ultrametric(to_compact_tree(tree)))
+    return from_compact_tree(make_ultrametric(compact_tree(tree)))
 end

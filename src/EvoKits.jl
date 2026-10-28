@@ -13,10 +13,8 @@ using Statistics
 using StableRNGs
 
 export CompactTree
-export load_newick_tree
-export to_compact_tree
-export from_compact_tree
-export save_newick_tree
+export read_tree
+export write_tree
 export mrca
 export distance
 export pairwise_distance

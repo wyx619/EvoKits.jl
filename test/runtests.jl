@@ -3,9 +3,35 @@ using EvoKits
 using DataFrames
 using Random
 
+@testset "Tree file I/O" begin
+    mktempdir() do dir
+        input = joinpath(dir, "input.nwk")
+        output = joinpath(dir, "output.nwk")
+        write_tree(input, "((A:1,B:2)inner:3,C:4)root;")
+        tree = read_tree(input)
+        @test tree isa CompactTree
+        loaded = EvoKits.compact_tree(EvoKits.load_tree(input))
+        @test loaded.tip_labels == tree.tip_labels
+        @test loaded.edge_length == tree.edge_length
+        @test tree.tip_labels == ["A", "B", "C"]
+        @test "inner" in tree.node_labels
+        @test distance(tree, "A", "B") ≈ 3.0
+        write_tree(output, tree)
+        restored = read_tree(output)
+        @test restored.tip_labels == tree.tip_labels
+        @test restored.node_labels == tree.node_labels
+        @test pairwise_distance(restored) ≈ pairwise_distance(tree)
+        @test restored.edge_length == tree.edge_length
+        write_tree(output, tree; append = true)
+        @test length(readlines(output)) == 2
+        @test_throws ArgumentError read_tree(joinpath(dir, "missing.nwk"))
+        write(input, "(A:1,B:1)")
+        @test_throws ArgumentError read_tree(input)
+    end
+end
+
 @testset "EvoKits" begin
-    nw = EvoKits.load_newick_tree(joinpath(@__DIR__, "tiny.nwk"))
-    tree = EvoKits.to_compact_tree(nw)
+    tree = read_tree(joinpath(@__DIR__, "tiny.nwk"))
     @test tree.ntips == 3
 
     ed = evol_distinct(tree)
@@ -42,7 +68,7 @@ end
 @testset "PhyloRef and tree pruning" begin
     tree_path = joinpath(mktempdir(), "mapping_tree.nwk")
     write(tree_path, "((A:1,B:1):1,(C:1,D:1):1);")
-    tree = to_compact_tree(load_newick_tree(tree_path))
+    tree = read_tree(tree_path)
 
     map = build_phyloref(tree)
     @test map.ape_node_ids[Int(tree.root)] == tree.ntips + 1
@@ -86,7 +112,7 @@ end
 @testset "EDGE2" begin
     tree_path = joinpath(mktempdir(), "edge2_tree.nwk")
     write(tree_path, "((A:1,B:1):1,(C:1,D:1):1);")
-    tree = to_compact_tree(load_newick_tree(tree_path))
+    tree = read_tree(tree_path)
     result = edge2_mod(tree, [0.1, 0.2, 0.3, 0.4])
 
     @test result.species == ["A", "B", "C", "D"]
@@ -127,7 +153,7 @@ end
 end
 
 @testset "NRI and NTI local null model" begin
-    tree = to_compact_tree(load_newick_tree(joinpath(@__DIR__, "tiny.nwk")))
+    tree = read_tree(joinpath(@__DIR__, "tiny.nwk"))
     mpd, mntd = EvoKits._community_metrics(tree, [1, 2, 3])
     @test mpd ≈ 10 / 3
     @test mntd ≈ 8 / 3
@@ -195,7 +221,7 @@ end
     swq_like_path = joinpath(mktempdir(), "swq_like.nwk")
     write(swq_like_path,
           "(((A:0.1,B:0.2):1,(C:0.3,D:0.4):1):1,((E:0.5,F:0.6):1,(G:0.7,H:0.8):1):1);")
-    swq_like_tree = to_compact_tree(load_newick_tree(swq_like_path))
+    swq_like_tree = read_tree(swq_like_path)
     query_index = EvoKits._build_tree_query_index(swq_like_tree)
     workspace = EvoKits._NriMetricsWorkspace(swq_like_tree)
     rng = MersenneTwister(20260729)
@@ -231,7 +257,7 @@ end
 @testset "Phylogenetic D" begin
     tree_path = joinpath(mktempdir(), "phylo_d_tree.nwk")
     write(tree_path, "((A:1,B:1):1,(C:1,D:1):1);")
-    tree = to_compact_tree(load_newick_tree(tree_path))
+    tree = read_tree(tree_path)
 
     result = phylo_d(tree, [1, 1, 0, 0]; permutations = 20, rng = MersenneTwister(11))
     @test result.observed ≈ 1.0
@@ -254,7 +280,7 @@ end
 
     polytomy_path = joinpath(mktempdir(), "phylo_d_polytomy.nwk")
     write(polytomy_path, "(A:1,B:1,C:1);")
-    polytomy = to_compact_tree(load_newick_tree(polytomy_path))
+    polytomy = read_tree(polytomy_path)
     poly_result = phylo_d(polytomy, [1, 0, 0]; permutations = 5, rng = MersenneTwister(14))
     @test poly_result.observed ≈ 4 / 3
 
@@ -272,7 +298,7 @@ end
 @testset "Tree kernel and shape" begin
     tree_path = joinpath(mktempdir(), "kernel_tree.nwk")
     write(tree_path, "((A:1,B:1):1,(C:1,D:1):1);")
-    tree = to_compact_tree(load_newick_tree(tree_path))
+    tree = read_tree(tree_path)
 
     @test mrca(tree, 1, 2) == Int(tree.parent_of_node[Int(tree.tip_ids[1])])
     @test mrca(tree, ["A", "B"]) == mrca(tree, 1, 2)
@@ -299,7 +325,7 @@ end
 @testset "P1 community beta and diversity" begin
     path = joinpath(mktempdir(), "star.nwk")
     write(path, "(A:1,B:1,C:1);")
-    tree = to_compact_tree(load_newick_tree(path))
+    tree = read_tree(path)
     comm = [1 1 0; 0 1 1]
 
     @test comdist(comm, tree)[1, 2] == 1.5
@@ -326,7 +352,7 @@ end
 
     balanced_path = joinpath(mktempdir(), "balanced_reference.nwk")
     write(balanced_path, "((A:1,B:1):1,(C:1,D:1):1);")
-    balanced = to_compact_tree(load_newick_tree(balanced_path))
+    balanced = read_tree(balanced_path)
     @test psv([1 1 0 0; 1 0 1 0; 1 1 1 1], balanced).variance ≈ [1 / 18, 1 / 18, 0.0]
     @test expected_pd(balanced).expected_pd ≈ [1.875, 3.5, 4.875, 6.0]
     @test expected_pd(balanced).variance_pd ≈ [3.2109375, 2.875, 1.3359375, 0.0]
@@ -344,14 +370,14 @@ end
     @test isnan(psv(singleton, balanced).psv[1])
     nonultra_path = joinpath(mktempdir(), "nonultrametric.nwk")
     write(nonultra_path, "((A:1,B:2):1,(C:1,D:1):1);")
-    nonultra = to_compact_tree(load_newick_tree(nonultra_path))
+    nonultra = read_tree(nonultra_path)
     @test_throws ArgumentError raoD([1 0 0 0], nonultra)
 end
 
 @testset "Caper ED polytomy corrections" begin
     path = joinpath(mktempdir(), "ed_polytomy.nwk")
     write(path, "(A:1,B:1,C:1);")
-    tree = to_compact_tree(load_newick_tree(path))
+    tree = read_tree(path)
     none = evol_distinct(tree; type = :fair_proportion, polytomy_correction = :none)
     isaac = evol_distinct(tree; type = :fair_proportion, polytomy_correction = :isaac)
     mooers = evol_distinct(tree; type = :fair_proportion, polytomy_correction = :mooers)
@@ -364,7 +390,7 @@ end
 @testset "Picante equal-splits ordering" begin
     path = joinpath(mktempdir(), "ed_equal_splits.nwk")
     write(path, "(((A:1,B:1):3,C:1):2,D:1);")
-    tree = to_compact_tree(load_newick_tree(path))
+    tree = read_tree(path)
 
     result = evol_distinct(tree; type = :equal_splits)
     @test result.tip_labels == ["A", "B", "C", "D"]
@@ -375,10 +401,10 @@ end
 @testset "P2 restricted K and PIC" begin
     path = joinpath(mktempdir(), "pic.nwk")
     write(path, "((A:1,B:1):1,(C:1,D:1):1);")
-    tree = to_compact_tree(load_newick_tree(path))
+    tree = read_tree(path)
     two_path = joinpath(mktempdir(), "two.nwk")
     write(two_path, "(A:1,B:1);")
-    two = to_compact_tree(load_newick_tree(two_path))
+    two = read_tree(two_path)
     pic_two = phylogenetic_contrasts(two, [1.0, 3.0])
     @test pic_two.contrasts ≈ [-sqrt(2.0)]
     @test pic_two.distances == [2.0]

@@ -184,5 +184,5 @@ function multi2di(tree::CompactTree; random::Bool = true, equiprob::Bool = true,
 end
 
 function multi2di(tree::T; kwargs...) where {T <: NewickTree.Node}
-    return from_compact_tree(multi2di(to_compact_tree(tree); kwargs...))
+    return from_compact_tree(multi2di(compact_tree(tree); kwargs...))
 end

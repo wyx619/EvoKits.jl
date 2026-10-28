@@ -1,4 +1,5 @@
-function load_newick_tree(path::AbstractString)
+"""Read a Newick file and return a `NewickTree.Node`."""
+function load_tree(path::AbstractString)
     isfile(path) || throw(ArgumentError("Tree file does not exist: $path"))
     newick = String(strip(read(path, String)))
     endswith(newick, ';') || throw(ArgumentError("Malformed Newick file: missing trailing semicolon"))
@@ -15,6 +16,9 @@ function load_newick_tree(path::AbstractString)
     end
 end
 
+"""Read a Newick file and return its `CompactTree` representation."""
+read_tree(path::AbstractString) = compact_tree(load_tree(path))
+
 @inline function _safe_node_children(node::T) where {T}
     if !isdefined(node, :children)
         return T[]
@@ -29,7 +33,7 @@ end
     return child_nodes
 end
 
-function to_compact_tree(tree::T) where {T <: NewickTree.Node}
+function compact_tree(tree::T) where {T <: NewickTree.Node}
     root_node = tree
     while !NewickTree.isroot(root_node)
         root_node = root_node.parent
@@ -144,7 +148,7 @@ function to_compact_tree(tree::T) where {T <: NewickTree.Node}
     )
 end
 
-preprocess_tree(tree::T) where {T <: NewickTree.Node} = to_compact_tree(tree)
+preprocess_tree(tree::T) where {T <: NewickTree.Node} = compact_tree(tree)
 
 function _build_children_with_lengths(tree::CompactTree)
     children_dl = Dict{Int, Vector{Tuple{Int, Float64}}}()
@@ -202,19 +206,16 @@ function from_compact_tree(tree::CompactTree)
     return _build_nw_node(tree, Int(tree.root), children_dl)
 end
 
-function save_newick_tree(path::AbstractString, tree::CompactTree; append::Bool = false)
-    io = IOBuffer()
-    NewickTree.writenw(io, from_compact_tree(tree))
-    return _write_newick_file(path, String(take!(io)), append)
+"""Write a tree as Newick to `path`; append another tree when `append=true`."""
+function write_tree(path::AbstractString, tree::CompactTree; append::Bool = false)
+    return _write_newick_file(path, NewickTree.nwstr(from_compact_tree(tree); internal = true), append)
 end
 
-function save_newick_tree(path::AbstractString, nw::NewickTree.Node; append::Bool = false)
-    io = IOBuffer()
-    NewickTree.writenw(io, nw)
-    return _write_newick_file(path, String(take!(io)), append)
+function write_tree(path::AbstractString, nw::NewickTree.Node; append::Bool = false)
+    return _write_newick_file(path, NewickTree.nwstr(nw; internal = true), append)
 end
 
-function save_newick_tree(path::AbstractString, newick::AbstractString; append::Bool = false)
+function write_tree(path::AbstractString, newick::AbstractString; append::Bool = false)
     content = String(newick)
     endswith(strip(content), ';') || (content = string(strip(content), ';'))
     return _write_newick_file(path, content, append)

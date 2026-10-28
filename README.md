@@ -5,45 +5,32 @@ tree I/O, a compact in-memory tree representation, topology utilities,
 community phylogenetic metrics, tree identity mapping, and lightweight
 comparative analysis.
 
-It is an independent package extracted from the reusable tree-tooling layer of
-EvoTraits. EvoKits does not include EvoTraits' continuous or discrete model
-engines, ancestral reconstruction workflows, or their result types.
-
-The stable public conventions are documented below in the Public API Contract:
-tip and community ordering, result fields, RNG behavior, and
-empty/singleton policies.
-
 ## Install and Load
 
-For local development:
-
 ```julia
-julia --project=.
-
-julia> using Pkg
-julia> Pkg.instantiate()
-julia> using EvoKits
+using Pkg
+Pkg.add(url = "https://github.com/wyx619/EvoKits.jl")
+using EvoKits
 ```
 
-EvoKits loads MKL as its first dependency. This selects Intel MKL as Julia's
-BLAS backend for the current Julia session.
+EvoKits loads MKL as its first dependency and supports selecting Intel MKL as
+the BLAS backend.
 
 ## Tree I/O and Topology
 
 ```julia
 using EvoKits
 
-raw_tree = load_newick_tree("example.nwk")
-tree = to_compact_tree(raw_tree)
+tree = read_tree("example.nwk")
 
 ultrametric_tree = make_ultrametric(tree)
 binary_tree = multi2di(ultrametric_tree; random = false)
-save_newick_tree("binary.nwk", binary_tree)
+write_tree("binary.nwk", binary_tree)
 ```
 
 `CompactTree` is the common input type for EvoKits tools. It caches topology,
-edge lengths, traversal order, and tip-label lookup while preserving a clear
-Newick conversion boundary through `to_compact_tree` and `from_compact_tree`.
+edge lengths, traversal order, and tip-label lookup. `read_tree` reads a Newick
+file directly into this representation.
 
 Tree queries use compact node IDs, tip positions, or tip labels explicitly:
 
@@ -353,8 +340,8 @@ session:
 using EvoKits
 using Random
 
-save_newick_tree("example.nwk", "((A:1,B:1):1,(C:1,D:1):1);")
-tree = to_compact_tree(load_newick_tree("example.nwk"))
+write_tree("example.nwk", "((A:1,B:1):1,(C:1,D:1):1);")
+tree = read_tree("example.nwk")
 
 community = [
     1 1 0 0
@@ -377,9 +364,6 @@ signal.k
 ```
 
 ## Public API Contract
-
-This section freezes the public conventions for the 0.2 API. Unless a
-signature says otherwise, public functions accept a `CompactTree`.
 
 ### Shared Ordering
 
@@ -475,21 +459,12 @@ trees. PIC is not a general ancestral-state reconstruction API.
 - Randomized methods accept an injected `AbstractRNG`; seed-based `nri_nti`
   remains deterministic for the same seed.
 
-The package deliberately does not export BM/OU/Mk fitting, general ASR, PGLS,
-diversification, dating, SIMMAP, plotting, or Castor C++ wrappers.
-
 ## Performance Benchmarks
-
-Run date: 2026-07-13. The benchmark uses balanced rooted Newick trees with
-unit branch lengths, Julia 1.12.6 on Windows. The first 1k-tip `CompactTree`
-timing includes initial method compilation; later sizes are warm measurements
-in the same process.
 
 Command shape:
 
 ```julia
-to_compact_tree(NewickTree.readnw(newick))
-_build_tree_query_index(tree)
+tree = read_tree(path)
 distances_from_root(tree)
 evol_distinct(tree)
 sample = zeros(Int, 1, n)
@@ -497,16 +472,15 @@ sample[1, 1:div(n, 2)] .= 1
 pd(sample, tree)
 ```
 
-| Tips | CompactTree | Allocated | Query index | Root distances | ED | Single-site PD |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 0.6037 s* | 51.83 MB | 0.0001 s | 0.0000 s | 0.0000 s | 0.0001 s |
-| 10,000 | 0.0169 s | 15.45 MB | 0.0007 s | 0.0000 s | 0.0002 s | 0.0008 s |
-| 100,000 | 0.2973 s | 156.42 MB | 0.0133 s | 0.0004 s | 0.0016 s | 0.0136 s |
+| Tips | read_tree | Root distances | ED | Single-site PD |
+| ---: | ---: | ---: | ---: | ---: |
+| 10,000 | 0.0170 s | 0.000045 s | 0.000209 s | 0.000807 s |
+| 100,000 | 0.2786 s | 0.000302 s | 0.001825 s | 0.013961 s |
+| 200,000 | 0.5099 s | 0.059488 s | 0.003887 s | 0.017693 s |
+| 500,000 | 1.6090 s | 0.260128 s | 0.010796 s | 0.154415 s |
 
-The 1,000-tip pairwise distance matrix took 0.0086 s and 8.12 MB. It is an
-O(n^2) dense matrix and was not allocated for 10,000 or 100,000 tips. These
-are smoke benchmarks, not a release performance claim; repeat them on the
-target deployment machine before making allocation or latency promises.
+Measurements use balanced rooted trees with unit branch lengths on Julia 1.12.7
+after a warm-up.
 
 ## Scope
 
@@ -520,11 +494,3 @@ EvoKits focuses on portable, tree-centered utilities:
 - Fritz-Purvis D for binary-trait phylogenetic signal
 - EDGE2 scores and extinction-probability utilities
 - Local-pool NRI/NTI with deterministic null sampling
-
-Continuous and discrete evolutionary-model fitting, reconstruction, SIMMAP,
-and analysis workflows remain in EvoTraits.
-
-The current test suite includes Picante/Caper hand fixtures and explicit
-empty/singleton/invalid-tree policies. The API contract, migration scope, and
-benchmark record are maintained in the sections above so this README is the
-single project reference.
