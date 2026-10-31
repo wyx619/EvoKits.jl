@@ -3,6 +3,8 @@ using EvoKits
 using DataFrames
 using Random
 
+include("community_sparse.jl")
+
 @testset "Tree file I/O" begin
     mktempdir() do dir
         input = joinpath(dir, "input.nwk")

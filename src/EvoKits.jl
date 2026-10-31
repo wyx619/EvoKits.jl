@@ -9,6 +9,7 @@ using NewickTree
 using NLopt
 using Optim
 using Random
+using SparseArrays
 using Statistics
 using StableRNGs
 
@@ -59,6 +60,14 @@ export keep_tip
 export drop_tip
 export pd
 export pd_dataframe
+export WeightedEndemismResult
+export weighted_endemism
+export PhyloEndemismResult
+export phylo_endemism
+export RelativePDResult
+export relative_pd
+export PhylobetaResult
+export phylobeta
 export ses_pd
 export ses_pd_dataframe
 export ses_mpd
@@ -131,6 +140,7 @@ include("traits/pic.jl")
 include("community/input.jl")
 include("community/null_models.jl")
 include("community/pd.jl")
+include("community/endemism.jl")
 include("community/mpd.jl")
 include("community/mntd.jl")
 include("community/beta.jl")

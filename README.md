@@ -114,6 +114,70 @@ For Caper-compatible ED handling on polytomies, use
 polytomy_correction = :isaac)`. The other supported modes are `:mooers` and
 `:none`.
 
+## Endemism, Relative PD and Beta Decomposition
+
+These functions accept dense matrices or `SparseMatrixCSC` inputs. Rows are
+sites, columns are species, and every positive value denotes presence. Values
+must be finite and non-negative. For tree-based functions, supply one column
+per tree tip, including zero columns
+for species absent from the collection. Use `tip_labels` when the column order
+differs from `tree.tip_labels`.
+
+```julia
+using SparseArrays
+
+comm = sparse(community)
+we = weighted_endemism(comm)
+pe = phylo_endemism(comm, tree; tip_labels = tree.tip_labels)
+strict_pe = phylo_endemism(comm, tree; weighted = false)
+rpd = relative_pd(comm, tree)
+
+we.we
+pe.pe
+strict_pe.pe
+rpd.rpd
+rpd.pd_normalized
+rpd.pd_equal_normalized
+
+beta = phylobeta(comm, tree; index_family = :sorensen)
+beta.total
+beta.turnover
+beta.nestedness
+
+# Calculate selected pairs without allocating three full site-by-site matrices.
+selected = phylobeta(comm, tree; index_family = :jaccard, pairs = [(1, 2)])
+selected.total
+```
+
+Weighted endemism (WE) sums reciprocal species occupancy. Weighted phylogenetic
+endemism (PE) sums branch length divided by the number of sites containing that
+branch; strict PE sums lengths of branches found in exactly one site. Occupancy
+uses the complete input collection, so independently calculating PE or WE on
+separate batches changes the statistic. Empty sites return zero.
+
+Relative PD (RPD) compares the original tree with the same topology after
+equalizing positive branch lengths and retaining zero branches. Each tree is
+normalized to total length one before calculating the ratio. All tree-based
+metrics in this section include paths to the supplied root; the input tree is
+preserved. RPD returns `NaN` for zero denominators.
+
+`phylobeta` supports Sørensen and Jaccard decomposition. Its `total`, `turnover`
+and `nestedness` fields are symmetric matrices, or vectors in the supplied pair
+order when `pairs` is used. For defined results, total equals turnover plus
+nestedness. Comparing a zero-PD site with a positive-PD site gives total one
+and undefined (`NaN`) turnover/nestedness; two zero-PD sites give `NaN` for all
+three components. Positive-PD diagonal entries are zero.
+
+`weighted_endemism`, `phylo_endemism`, `relative_pd`, and `phylobeta` accept
+`sample_labels` and retain row order. Results include richness or occupancy
+diagnostics where applicable. `pd`, `unifrac`, and `phylosor` also use sparse
+presence processing without constructing dense community inputs. WE, PE and PD
+are computed without retaining all tip-to-root paths. Branch lengths must be
+finite and non-negative, with a finite total branch length.
+
+Reproducible correctness checks, R comparisons and performance measurements are
+described in [the community validation report](validation/community/README.md).
+
 ## NRI and NTI
 
 For a single observed community and a local species pool, use `nri_nti`:
@@ -409,6 +473,15 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
 
 - `pd` returns `PDResult` with `sample_labels`, `pd`, `richness`, and
   `include_root`.
+- `weighted_endemism` returns `WeightedEndemismResult` with `sample_labels`,
+  `we`, `richness`, and `species_occupancy` in input column order.
+- `phylo_endemism` returns `PhyloEndemismResult` with `sample_labels`, `pe`,
+  `richness`, `branch_occupancy` in tree edge order, and `weighted`.
+- `relative_pd` returns `RelativePDResult` with `sample_labels`, `rpd`,
+  `pd_normalized`, `pd_equal_normalized`, `richness`, `total_branch_length`,
+  and `positive_branch_count`.
+- `phylobeta` returns `PhylobetaResult` with `sample_labels`, `total`,
+  `turnover`, `nestedness`, `index_family`, and `pairs`.
 - `ses_pd`, `ses_mpd`, and `ses_mntd` return typed results containing observed
   values, null means/SDs, z scores, rank p-values, run count, and null model.
   Empty or singleton MPD/MNTD observations are `NaN`.

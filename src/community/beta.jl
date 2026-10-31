@@ -106,60 +106,209 @@ end
 
 function _community_edge_presence(abundance::AbstractMatrix{<:Real}, tree::CompactTree)
     edge_presence = falses(size(abundance, 1), tree.nedges)
-    paths = _tools_tip_paths(tree)
-    for i in axes(abundance, 1)
-        for tip in findall(>(0), abundance[i, :])
-            edge_presence[i, paths[tip]] .= true
-        end
+    rows = _community_tip_rows(abundance, tree, nothing)
+    _walk_community_branches(rows, tree) do site, edge
+        edge_presence[site, edge] = true
     end
     return edge_presence
+end
+
+# Merge sorted edge sets and accumulate shared/unique lengths independently.
+# Computing unique lengths by PD - shared can lose small terminal branches.
+function _community_branch_components(left, right, lengths)
+    a, b, c = 0.0, 0.0, 0.0
+    i, j = 1, 1
+    @inbounds while i <= length(left) && j <= length(right)
+        le, re = left[i], right[j]
+        if le == re
+            a += lengths[le]
+            i += 1
+            j += 1
+        elseif le < re
+            b += lengths[le]
+            i += 1
+        else
+            c += lengths[re]
+            j += 1
+        end
+    end
+    @inbounds for k in i:length(left)
+        b += lengths[left[k]]
+    end
+    @inbounds for k in j:length(right)
+        c += lengths[right[k]]
+    end
+    return a, b, c
+end
+
+function _community_pairwise(f, branches, lengths)
+    n = length(branches)
+    shared = n >= 128 ? _community_shared_lengths(branches, lengths) : nothing
+    result = shared === nothing ? Matrix{Float64}(undef, n, n) : shared
+    pd_values = shared === nothing ? Float64[] : diag(shared)
+    for i in 1:n, j in 1:i
+        a, b, c = shared === nothing ?
+            _community_branch_components(branches[i], branches[j], lengths) :
+            _community_components_from_shared(branches, lengths, shared[i, j], pd_values, i, j)
+        result[i, j] = result[j, i] = f(a, b, c)
+    end
+    return result
+end
+
+# Full output already requires O(nsites^2) space. Sparse multiplication avoids
+# merging every branch set for every pair; selected-pair calls keep the merge
+# path and do not construct this matrix.
+function _community_shared_lengths(branches, lengths)
+    pointers = Vector{Int}(undef, length(branches) + 1)
+    pointers[1] = 1
+    for site in eachindex(branches)
+        pointers[site + 1] = pointers[site] + length(branches[site])
+    end
+    indices = Vector{Int}(undef, last(pointers) - 1)
+    for site in eachindex(branches)
+        copyto!(indices, pointers[site], branches[site], 1, length(branches[site]))
+    end
+    incidence = SparseMatrixCSC(length(lengths), length(branches), pointers,
+        indices, ones(Float64, length(indices)))
+    weighted = copy(incidence)
+    for k in eachindex(nonzeros(weighted))
+        nonzeros(weighted)[k] = lengths[rowvals(weighted)[k]]
+    end
+    dropzeros!(weighted)
+    return Matrix(transpose(incidence) * weighted)
+end
+
+@inline function _community_components_from_shared(branches, lengths, a, pd_values, i, j)
+    b, c = pd_values[i] - a, pd_values[j] - a
+    # Recompute unique branches directly near cancellation, including nested
+    # or zero-PD sites and tiny terminal branches attached to a very long stem.
+    if min(b, c) <= 1e-7 * max(pd_values[i], pd_values[j])
+        return _community_branch_components(branches[i], branches[j], lengths)
+    end
+    return a, b, c
+end
+
+@inline function _community_scaled_components(a, b, c)
+    scale = max(a, b, c)
+    return scale > 0 ? (a / scale, b / scale, c / scale) : (0.0, 0.0, 0.0)
 end
 
 """Unweighted UniFrac distances for rooted trees with branch lengths."""
 function unifrac(community::AbstractMatrix{<:Real}, tree::CompactTree;
     tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
 )
-    all(isfinite, tree.edge_length) && all(>=(0), tree.edge_length) ||
-        throw(ArgumentError("unifrac requires finite, non-negative branch lengths"))
-    abundance = _community_abundance(community, tree, tip_labels)
-    active = _community_edge_presence(abundance, tree)
-    n = size(abundance, 1)
-    result = fill(NaN, n, n)
-    for i in 1:n
-        for j in 1:i
-            union_length = 0.0
-            unique_length = 0.0
-            for edge in 1:tree.nedges
-                ai, aj = active[i, edge], active[j, edge]
-                (ai || aj) || continue
-                len = tree.edge_length[edge]
-                union_length += len
-                ai != aj && (unique_length += len)
-            end
-            result[i, j] = result[j, i] = union_length > 0 ? unique_length / union_length : 0.0
-        end
+    _validate_community_branch_lengths(tree)
+    rows = _community_tip_rows(community, tree, tip_labels)
+    branches = _community_branch_sets(rows, tree)
+    return _community_pairwise(branches, tree.edge_length) do a, b, c
+        a, b, c = _community_scaled_components(a, b, c)
+        denom = a + b + c
+        denom > 0 ? (b + c) / denom : 0.0
     end
-    return result
 end
 
 """PhyloSor similarity, `2 * shared PD / (PD₁ + PD₂)`."""
 function phylosor(community::AbstractMatrix{<:Real}, tree::CompactTree;
     tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
 )
-    abundance = _community_abundance(community, tree, tip_labels)
-    active = _community_edge_presence(abundance, tree)
-    edge_lengths = tree.edge_length
-    n = size(abundance, 1)
-    result = fill(NaN, n, n)
-    pd_values = [sum(edge_lengths[active[i, :]]) for i in 1:n]
-    for i in 1:n
-        for j in 1:i
-            denom = pd_values[i] + pd_values[j]
-            result[i, j] = result[j, i] = denom > 0 ?
-                2 * sum(edge_lengths[active[i, :] .& active[j, :]]) / denom : 0.0
+    _validate_community_branch_lengths(tree)
+    rows = _community_tip_rows(community, tree, tip_labels)
+    branches = _community_branch_sets(rows, tree)
+    return _community_pairwise(branches, tree.edge_length) do a, b, c
+        a, b, c = _community_scaled_components(a, b, c)
+        denom = 2a + b + c
+        denom > 0 ? 2a / denom : 0.0
+    end
+end
+
+"""Pairwise beta decomposition; arrays are matrices, or vectors when pairs is supplied."""
+struct PhylobetaResult{T<:AbstractArray{Float64}}
+    sample_labels::Vector{String}
+    total::T
+    turnover::T
+    nestedness::T
+    index_family::Symbol
+    pairs::Union{Nothing, Vector{Tuple{Int, Int}}}
+end
+
+@inline function _community_beta_components(a, b, c, family::Symbol)
+    # Turnover only depends on shared length and the smaller unique length.
+    # Scale these independently: a large other unique length can otherwise
+    # underflow both to zero and turn a defined turnover into NaN.
+    m = min(b, c)
+    turnover_scale = max(a, m)
+    shared, unique = turnover_scale > 0 ?
+        (a / turnover_scale, m / turnover_scale) : (0.0, 0.0)
+    turnover_denom = family === :sorensen ? shared + unique : shared + 2unique
+    turnover = turnover_denom > 0 ?
+        (family === :sorensen ? unique : 2unique) / turnover_denom : NaN
+    a, b, c = _community_scaled_components(a, b, c)
+    denom = family === :sorensen ? 2a + b + c : a + b + c
+    total = denom > 0 ? (b + c) / denom : NaN
+    nestedness = max(0.0, total - turnover)
+    return total, turnover, nestedness
+end
+
+"""
+    phylobeta(community, tree; index_family=:sorensen, pairs=nothing,
+              tip_labels=nothing, sample_labels=nothing)
+
+Partition rooted phylogenetic dissimilarity into turnover and nestedness.
+Supports :sorensen and :jaccard. Returns three symmetric matrices in input
+row order, or three vectors in the supplied order of (row_i, row_j) pairs.
+The pairs option avoids constructing full site-by-site result matrices.
+
+Zero denominators return NaN. Comparing an empty (or zero-PD) site with a
+positive-PD site gives total=1 and undefined turnover/nestedness. Two zero-PD
+sites give NaN for all components. Nonzero-PD diagonal entries are zero.
+"""
+function phylobeta(community::AbstractMatrix{<:Real}, tree::CompactTree;
+    index_family::Symbol = :sorensen,
+    pairs = nothing,
+    tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
+    sample_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
+)
+    index_family in (:sorensen, :jaccard) ||
+        throw(ArgumentError("index_family must be :sorensen or :jaccard"))
+    _validate_community_branch_lengths(tree)
+    n = size(community, 1)
+    labels = _tools_sample_labels(n, sample_labels)
+    selected = if pairs === nothing
+        nothing
+    else
+        result = Tuple{Int, Int}[]
+        for pair in pairs
+            (pair isa Tuple || pair isa AbstractVector) && length(pair) == 2 &&
+                all(x -> x isa Integer && !(x isa Bool) && 1 <= x <= n, pair) ||
+                throw(ArgumentError("pairs must contain two valid integer row indices per pair"))
+            push!(result, (Int(pair[1]), Int(pair[2])))
+        end
+        result
+    end
+    rows = _community_tip_rows(community, tree, tip_labels)
+    branches = _community_branch_sets(rows, tree)
+    if selected === nothing
+        shared = n >= 128 ? _community_shared_lengths(branches, tree.edge_length) : nothing
+        total = shared === nothing ? Matrix{Float64}(undef, n, n) : shared
+        turnover, nestedness = (Matrix{Float64}(undef, n, n) for _ in 1:2)
+        pd_values = shared === nothing ? Float64[] : diag(shared)
+        for i in 1:n, j in 1:i
+            a, b, c = shared === nothing ?
+                _community_branch_components(branches[i], branches[j], tree.edge_length) :
+                _community_components_from_shared(branches, tree.edge_length, shared[i, j], pd_values, i, j)
+            t, v, u = _community_beta_components(a, b, c, index_family)
+            total[i, j] = total[j, i] = t
+            turnover[i, j] = turnover[j, i] = v
+            nestedness[i, j] = nestedness[j, i] = u
+        end
+    else
+        total, turnover, nestedness = (Vector{Float64}(undef, length(selected)) for _ in 1:3)
+        for (k, (i, j)) in enumerate(selected)
+            a, b, c = _community_branch_components(branches[i], branches[j], tree.edge_length)
+            total[k], turnover[k], nestedness[k] = _community_beta_components(a, b, c, index_family)
         end
     end
-    return result
+    return PhylobetaResult(labels, total, turnover, nestedness, index_family, selected)
 end
 
 Base.@kwdef struct RaoDResult

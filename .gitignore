@@ -24,6 +24,7 @@ docs/site/
 # Manifest.toml
 agents.md
 EvoKits.jl/
-validation/
+/status.md
+/validation/
 reference/
 

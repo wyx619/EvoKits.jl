@@ -54,15 +54,76 @@ function _pd_from_presence!(out::Vector{Float64}, richness::Vector{Int}, presenc
 end
 
 function pd(samp::AbstractMatrix{<:Real}, tree::CompactTree; include_root::Bool = true, tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing, sample_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing)
-    size(samp, 2) == tree.ntips || throw(ArgumentError("samp must have one column per tree tip"))
-    perm = _tools_tip_permutation(tree, tip_labels)
-    presence = _tools_presence_matrix(samp, perm)
-    paths = _tools_tip_paths(tree)
-    stamp = zeros(Int32, tree.nedges)
-    pd_values = Vector{Float64}(undef, size(samp, 1))
-    richness = Vector{Int}(undef, size(samp, 1))
-    _pd_from_presence!(pd_values, richness, presence, tree, paths, stamp, include_root)
-    return PDResult(sample_labels = _tools_sample_labels(size(samp, 1), sample_labels), pd = pd_values, richness = richness, include_root = include_root)
+    _validate_community_branch_lengths(tree)
+    labels = _tools_sample_labels(size(samp, 1), sample_labels)
+    rows = _community_tip_rows(samp, tree, tip_labels)
+    richness = length.(rows)
+    roots = nothing
+    if !include_root
+        index = _build_tree_query_index(tree)
+        roots = fill(tree.root, length(rows))
+        for (site, tips) in enumerate(rows)
+            isempty(tips) && continue
+            ancestor = tree.tip_ids[first(tips)]
+            for tip in Iterators.drop(tips, 1)
+                ancestor = _tree_lca(index, ancestor, tree.tip_ids[tip])
+            end
+            roots[site] = ancestor
+        end
+    end
+    pd_values = zeros(Float64, length(rows))
+    _walk_community_branches(rows, tree; roots = roots) do site, edge
+        pd_values[site] += tree.edge_length[edge]
+    end
+    if !include_root
+        pd_values[richness .== 1] .= NaN
+    end
+    return PDResult(sample_labels = labels, pd = pd_values, richness = richness, include_root = include_root)
+end
+
+"""Relative PD and its normalized original/equal-positive-branch components."""
+struct RelativePDResult
+    sample_labels::Vector{String}
+    rpd::Vector{Float64}
+    pd_normalized::Vector{Float64}
+    pd_equal_normalized::Vector{Float64}
+    richness::Vector{Int}
+    total_branch_length::Float64
+    positive_branch_count::Int
+end
+
+"""
+    relative_pd(community, tree; tip_labels=nothing, sample_labels=nothing)
+
+Divide PD on the original tree by PD on a tree with the same topology and
+equal positive branch lengths. Normalize each tree's total branch length to
+one; zero branches remain zero. Includes root paths and never modifies tree.
+Zero denominator gives NaN, including empty sites and all-zero-length trees.
+"""
+function relative_pd(community::AbstractMatrix{<:Real}, tree::CompactTree;
+    tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
+    sample_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
+)
+    _validate_community_branch_lengths(tree)
+    labels = _tools_sample_labels(size(community, 1), sample_labels)
+    rows = _community_tip_rows(community, tree, tip_labels)
+    total = sum(tree.edge_length)
+    isfinite(total) || throw(ArgumentError("total branch length must be finite"))
+    positive = count(>(0), tree.edge_length)
+    original, equal = zeros(Float64, length(rows)), zeros(Float64, length(rows))
+    _walk_community_branches(rows, tree) do site, edge
+        original[site] += tree.edge_length[edge]
+        tree.edge_length[edge] > 0 && (equal[site] += 1)
+    end
+    if total > 0
+        original ./= total
+        equal ./= positive
+    else
+        fill!(original, NaN)
+        fill!(equal, NaN)
+    end
+    rpd = [equal[i] > 0 ? original[i] / equal[i] : NaN for i in eachindex(equal)]
+    return RelativePDResult(labels, rpd, original, equal, length.(rows), total, positive)
 end
 
 function pd_dataframe(samp::AbstractMatrix{<:Real}, tree::CompactTree; kwargs...)

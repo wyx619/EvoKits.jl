@@ -90,6 +90,46 @@ expected_pd(tree).expected_pd
 
 如需 Caper 兼容的多分叉 ED 处理方式，可使用 `evol_distinct(tree; type = :fair_proportion, polytomy_correction = :isaac)`；其他支持的模式为 `:mooers` 和 `:none`。
 
+## 特有性、相对 PD 与 beta 分解
+
+这些函数接受普通稠密矩阵和 `SparseMatrixCSC` 稀疏矩阵。行表示群落，列表示物种，数值必须有限且非负，所有正值均按存在处理。使用树的函数要求每个 tip 对应一列；未出现在任何群落中的树物种也保留为零列。输入列顺序与 `tree.tip_labels` 不同时，通过 `tip_labels` 指明列标签。
+
+```julia
+using SparseArrays
+
+comm = sparse(community)
+we = weighted_endemism(comm)
+pe = phylo_endemism(comm, tree; tip_labels = tree.tip_labels)
+strict_pe = phylo_endemism(comm, tree; weighted = false)
+rpd = relative_pd(comm, tree)
+
+we.we
+pe.pe
+strict_pe.pe
+rpd.rpd
+rpd.pd_normalized
+rpd.pd_equal_normalized
+
+beta = phylobeta(comm, tree; index_family = :sorensen)
+beta.total
+beta.turnover
+beta.nestedness
+
+# 只计算指定群落对，避免分配三个完整的群落间矩阵。
+selected = phylobeta(comm, tree; index_family = :jaccard, pairs = [(1, 2)])
+selected.total
+```
+
+加权特有性 WE 对群落内物种的占据群落数取倒数后求和。加权系统发育特有性 PE 对群落包含的各条分支，按“枝长 / 包含该分支的群落数”求和；设置 `weighted=false` 时计算严格 PE，只累加仅在一个群落出现的分支长度。占据范围基于完整输入，分别对几个批次独立计算 WE 或 PE 会改变统计量。空群落返回零。
+
+相对系统发育多样性 RPD 使用拓扑相同、所有正枝长相等且保留零枝长的参照树。原树和参照树分别归一化至总枝长为一，再计算 PD 比值。本节使用树的指标都包含至输入树根的路径，计算不会修改原树。RPD 的分母为零时返回 `NaN`。
+
+`phylobeta` 支持 Sørensen 和 Jaccard 分解，返回总差异 `total`、周转 `turnover` 和嵌套 `nestedness`。默认字段为对称矩阵；提供 `pairs` 后返回与指定群落对顺序一致的向量。定义有效时，总差异等于周转与嵌套之和。零 PD 群落与正 PD 群落比较时，总差异为一，周转和嵌套未定义，返回 `NaN`；两个零 PD 群落的三项均为 `NaN`。正 PD 群落的对角线为零。
+
+四个新函数都接受 `sample_labels` 并保留群落行顺序，结果提供相应丰富度或占据数。`pd`、`unifrac` 和 `phylosor` 也支持稀疏输入处理，不会强制构造稠密群落矩阵。WE、PE 和 PD 无需保存所有 tip 到根的完整路径。枝长必须有限且非负，总枝长也必须有限。
+
+可重跑的正确性检查、R 对照和性能测量见[群落指标验收报告](validation/community/README.md)。
+
 ## NRI 和 NTI
 
 对于单个观测群落及其本地物种池，使用 `nri_nti`：
@@ -306,6 +346,10 @@ signal.k
 ### 群落结果类型
 
 - `pd` 返回 `PDResult`，包含 `sample_labels`、`pd`、`richness` 和 `include_root`。
+- `weighted_endemism` 返回 `WeightedEndemismResult`，包含 `sample_labels`、`we`、`richness` 和按输入物种列顺序排列的 `species_occupancy`。
+- `phylo_endemism` 返回 `PhyloEndemismResult`，包含 `sample_labels`、`pe`、`richness`、按树的边顺序排列的 `branch_occupancy` 和 `weighted`。
+- `relative_pd` 返回 `RelativePDResult`，包含 `sample_labels`、`rpd`、`pd_normalized`、`pd_equal_normalized`、`richness`、`total_branch_length` 和 `positive_branch_count`。
+- `phylobeta` 返回 `PhylobetaResult`，包含 `sample_labels`、`total`、`turnover`、`nestedness`、`index_family` 和 `pairs`。
 - `ses_pd`、`ses_mpd` 和 `ses_mntd` 返回带类型的结果，包含观测值、零模型均值和标准差、z 分数、秩 p 值、运行次数和零模型。空群落或单物种群落的 MPD/MNTD 观测值为 `NaN`。
 - `psv` 返回 `PSVResult`，包含 `psv`、`richness`、`variance` 和 `scale_vcv`；少于两个分类单元的群落的 PSV 和方差为 `NaN`。`psr`、`pse`、`psc` 和 `psd` 返回命名元组，其字段为相应函数文档中的指标名称。
 - `expected_pd` 和 `pd_variance` 返回 `ExpectedPDResult`；`richness` 为 `1:tree.ntips`，`expected_pd` 为解析期望值，`variance_pd` 为 `upper_bound` 选择的上界或精确 Picante 方差。
