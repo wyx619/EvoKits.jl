@@ -58,19 +58,7 @@ function pd(samp::AbstractMatrix{<:Real}, tree::CompactTree; include_root::Bool 
     labels = _tools_sample_labels(size(samp, 1), sample_labels)
     rows = _community_tip_rows(samp, tree, tip_labels)
     richness = length.(rows)
-    roots = nothing
-    if !include_root
-        index = _build_tree_query_index(tree)
-        roots = fill(tree.root, length(rows))
-        for (site, tips) in enumerate(rows)
-            isempty(tips) && continue
-            ancestor = tree.tip_ids[first(tips)]
-            for tip in Iterators.drop(tips, 1)
-                ancestor = _tree_lca(index, ancestor, tree.tip_ids[tip])
-            end
-            roots[site] = ancestor
-        end
-    end
+    roots = include_root ? nothing : _community_roots(rows, tree)
     pd_values = zeros(Float64, length(rows))
     _walk_community_branches(rows, tree; roots = roots) do site, edge
         pd_values[site] += tree.edge_length[edge]

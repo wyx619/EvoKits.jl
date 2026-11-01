@@ -128,7 +128,27 @@ selected.total
 
 四个新函数都接受 `sample_labels` 并保留群落行顺序，结果提供相应丰富度或占据数。`pd`、`unifrac` 和 `phylosor` 也支持稀疏输入处理，不会强制构造稠密群落矩阵。WE、PE 和 PD 无需保存所有 tip 到根的完整路径。枝长必须有限且非负，总枝长也必须有限。
 
-可重跑的正确性检查、R 对照和性能测量见[群落指标验收报告](validation/community/README.md)。
+对同一份树和群落数据重复计算时，可先准备上下文：
+
+```julia
+ctx = prepare_community(comm, tree; tip_labels = tree.tip_labels)
+pd(ctx).pd
+pd(ctx; include_root = false).pd
+weighted_endemism(ctx).we
+phylo_endemism(ctx).pe
+phylo_endemism(ctx; weighted = false).pe
+relative_pd(ctx).rpd
+unifrac(ctx)
+phylosor(ctx)
+
+# 每次请求都复用标签匹配和分支集合。
+first_batch = phylobeta(ctx; pairs = [(1, 2)])
+second_batch = phylobeta(ctx; index_family = :jaccard, pairs = [(2, 1)])
+```
+
+`prepare_community` 返回 `CommunityContext`，独立保存标签匹配后的分支集合、完整输入中的物种和分支占据统计，以及各群落的汇总值。后续群落对索引始终对应准备时的输入行；WE/PE 的占据范围始终是准备时的完整集合，物种占据数按原输入列顺序返回。群落标签通过准备时的 `sample_labels` 设置，也支持 `pd_dataframe(ctx)`。
+
+原矩阵、树或标签后续发生变化时，上下文仍使用准备时的快照；分析新数据需要重新准备。可以独立修改返回结果；上下文内部数组应视为只读。准备过程会保留分支集合及汇总值，因此有一次性的时间和内存成本，适合同一数据的重复分析。上下文不保留原始树和矩阵，也不缓存完整群落间矩阵；完整矩阵调用仍执行两两计算并分配输出，指定群落对调用仅分配请求的结果。
 
 ## NRI 和 NTI
 

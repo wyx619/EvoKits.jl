@@ -175,8 +175,38 @@ presence processing without constructing dense community inputs. WE, PE and PD
 are computed without retaining all tip-to-root paths. Branch lengths must be
 finite and non-negative, with a finite total branch length.
 
-Reproducible correctness checks, R comparisons and performance measurements are
-described in [the community validation report](validation/community/README.md).
+For repeated analyses of the same collection, prepare it once:
+
+```julia
+ctx = prepare_community(comm, tree; tip_labels = tree.tip_labels)
+pd(ctx).pd
+pd(ctx; include_root = false).pd
+weighted_endemism(ctx).we
+phylo_endemism(ctx).pe
+phylo_endemism(ctx; weighted = false).pe
+relative_pd(ctx).rpd
+unifrac(ctx)
+phylosor(ctx)
+
+# Each request reuses the label alignment and branch sets.
+first_batch = phylobeta(ctx; pairs = [(1, 2)])
+second_batch = phylobeta(ctx; index_family = :jaccard, pairs = [(2, 1)])
+```
+
+`prepare_community` returns a `CommunityContext` with independent snapshots of
+label alignment, per-site branch sets, global species/branch occupancy, and
+per-site summaries. Pair indices always refer to the original input rows;
+WE/PE occupancy always refers to the complete collection used to prepare the
+context. Species occupancy retains the input column order. `sample_labels`
+are set during preparation, and `pd_dataframe(ctx)` is also supported.
+
+Changing the original matrix, tree, or labels does not update the context;
+prepare a new one when the data changes. Returned results may be modified
+independently. Treat the context's internal arrays as read-only. Preparation
+retains branch sets and summaries, so it costs time and memory up front and is
+intended for reuse. It does not retain the input tree or matrix, or cache full
+pairwise matrices. Full matrix calls still perform pairwise calculations and
+allocate their outputs; selected-pair calls allocate only requested results.
 
 ## NRI and NTI
 

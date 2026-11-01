@@ -4,6 +4,7 @@ using DataFrames
 using Random
 
 include("community_sparse.jl")
+include("community_context.jl")
 
 @testset "Tree file I/O" begin
     mktempdir() do dir

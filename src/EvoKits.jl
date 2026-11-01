@@ -68,6 +68,8 @@ export RelativePDResult
 export relative_pd
 export PhylobetaResult
 export phylobeta
+export CommunityContext
+export prepare_community
 export ses_pd
 export ses_pd_dataframe
 export ses_mpd
@@ -144,6 +146,7 @@ include("community/endemism.jl")
 include("community/mpd.jl")
 include("community/mntd.jl")
 include("community/beta.jl")
+include("community/context.jl")
 include("community/diversity.jl")
 include("community/nri_nti.jl")
 include("community/nri_nti_table.jl")

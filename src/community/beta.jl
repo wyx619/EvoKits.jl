@@ -200,7 +200,11 @@ function unifrac(community::AbstractMatrix{<:Real}, tree::CompactTree;
     _validate_community_branch_lengths(tree)
     rows = _community_tip_rows(community, tree, tip_labels)
     branches = _community_branch_sets(rows, tree)
-    return _community_pairwise(branches, tree.edge_length) do a, b, c
+    return _unifrac(branches, tree.edge_length)
+end
+
+function _unifrac(branches, lengths)
+    return _community_pairwise(branches, lengths) do a, b, c
         a, b, c = _community_scaled_components(a, b, c)
         denom = a + b + c
         denom > 0 ? (b + c) / denom : 0.0
@@ -214,7 +218,11 @@ function phylosor(community::AbstractMatrix{<:Real}, tree::CompactTree;
     _validate_community_branch_lengths(tree)
     rows = _community_tip_rows(community, tree, tip_labels)
     branches = _community_branch_sets(rows, tree)
-    return _community_pairwise(branches, tree.edge_length) do a, b, c
+    return _phylosor(branches, tree.edge_length)
+end
+
+function _phylosor(branches, lengths)
+    return _community_pairwise(branches, lengths) do a, b, c
         a, b, c = _community_scaled_components(a, b, c)
         denom = 2a + b + c
         denom > 0 ? 2a / denom : 0.0
@@ -268,34 +276,46 @@ function phylobeta(community::AbstractMatrix{<:Real}, tree::CompactTree;
     tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
     sample_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
 )
-    index_family in (:sorensen, :jaccard) ||
-        throw(ArgumentError("index_family must be :sorensen or :jaccard"))
+    _validate_community_beta_family(index_family)
     _validate_community_branch_lengths(tree)
     n = size(community, 1)
     labels = _tools_sample_labels(n, sample_labels)
-    selected = if pairs === nothing
-        nothing
-    else
-        result = Tuple{Int, Int}[]
-        for pair in pairs
-            (pair isa Tuple || pair isa AbstractVector) && length(pair) == 2 &&
-                all(x -> x isa Integer && !(x isa Bool) && 1 <= x <= n, pair) ||
-                throw(ArgumentError("pairs must contain two valid integer row indices per pair"))
-            push!(result, (Int(pair[1]), Int(pair[2])))
-        end
-        result
-    end
+    selected = _community_pairs(pairs, n)
     rows = _community_tip_rows(community, tree, tip_labels)
     branches = _community_branch_sets(rows, tree)
+    total, turnover, nestedness = _phylobeta(branches, tree.edge_length, index_family, selected)
+    return PhylobetaResult(labels, total, turnover, nestedness, index_family, selected)
+end
+
+function _validate_community_beta_family(family::Symbol)
+    family in (:sorensen, :jaccard) ||
+        throw(ArgumentError("index_family must be :sorensen or :jaccard"))
+    return nothing
+end
+
+function _community_pairs(pairs, n)
+    pairs === nothing && return nothing
+    result = Tuple{Int, Int}[]
+    for pair in pairs
+        (pair isa Tuple || pair isa AbstractVector) && length(pair) == 2 &&
+            all(x -> x isa Integer && !(x isa Bool) && 1 <= x <= n, pair) ||
+            throw(ArgumentError("pairs must contain two valid integer row indices per pair"))
+        push!(result, (Int(pair[1]), Int(pair[2])))
+    end
+    return result
+end
+
+function _phylobeta(branches, lengths, index_family, selected)
+    n = length(branches)
     if selected === nothing
-        shared = n >= 128 ? _community_shared_lengths(branches, tree.edge_length) : nothing
+        shared = n >= 128 ? _community_shared_lengths(branches, lengths) : nothing
         total = shared === nothing ? Matrix{Float64}(undef, n, n) : shared
         turnover, nestedness = (Matrix{Float64}(undef, n, n) for _ in 1:2)
         pd_values = shared === nothing ? Float64[] : diag(shared)
         for i in 1:n, j in 1:i
             a, b, c = shared === nothing ?
-                _community_branch_components(branches[i], branches[j], tree.edge_length) :
-                _community_components_from_shared(branches, tree.edge_length, shared[i, j], pd_values, i, j)
+                _community_branch_components(branches[i], branches[j], lengths) :
+                _community_components_from_shared(branches, lengths, shared[i, j], pd_values, i, j)
             t, v, u = _community_beta_components(a, b, c, index_family)
             total[i, j] = total[j, i] = t
             turnover[i, j] = turnover[j, i] = v
@@ -304,11 +324,11 @@ function phylobeta(community::AbstractMatrix{<:Real}, tree::CompactTree;
     else
         total, turnover, nestedness = (Vector{Float64}(undef, length(selected)) for _ in 1:3)
         for (k, (i, j)) in enumerate(selected)
-            a, b, c = _community_branch_components(branches[i], branches[j], tree.edge_length)
+            a, b, c = _community_branch_components(branches[i], branches[j], lengths)
             total[k], turnover[k], nestedness[k] = _community_beta_components(a, b, c, index_family)
         end
     end
-    return PhylobetaResult(labels, total, turnover, nestedness, index_family, selected)
+    return total, turnover, nestedness
 end
 
 Base.@kwdef struct RaoDResult

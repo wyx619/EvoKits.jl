@@ -109,12 +109,31 @@ function _community_tip_rows(community::AbstractMatrix{<:Real}, tree::CompactTre
     size(community, 2) == tree.ntips ||
         throw(ArgumentError("community matrix must have one column per tree tip"))
     perm = _tools_tip_permutation(tree, tip_labels)
+    return _community_tip_rows(community, perm)
+end
+
+function _community_tip_rows(community::AbstractMatrix{<:Real}, perm::AbstractVector{<:Integer})
     rows = _community_presence_rows(community, perm)
     # Match tree-tip order even when input columns were permuted.
     if !issorted(perm)
         foreach(sort!, rows)
     end
     return rows
+end
+
+function _community_roots(rows, tree::CompactTree)
+    roots = fill(tree.root, length(rows))
+    any(tips -> length(tips) > 1, rows) || return roots
+    index = _build_tree_query_index(tree)
+    for (site, tips) in enumerate(rows)
+        isempty(tips) && continue
+        ancestor = tree.tip_ids[first(tips)]
+        for tip in Iterators.drop(tips, 1)
+            ancestor = _tree_lca(index, ancestor, tree.tip_ids[tip])
+        end
+        roots[site] = ancestor
+    end
+    return roots
 end
 
 function _community_edge_index(tree::CompactTree)
