@@ -230,6 +230,41 @@ beta_diss(grouped) # 分组后的 CommunityData 可直接用于分类指标
 
 `aggregate_species` 返回新的 `CommunityData`，CSC 列对应物种组。默认统计每组存在的物种数；`abundance_weighted=true` 汇总丰度并保留数值类型（Bool 转 Int）。`normalize=true` 返回各群落保留分组的 Float64 比例，空行仍为零。组名使用字符串或整数，默认按输入物种列首次出现的组排序，包含已映射零列对应的组；`group_labels` 可固定完整顺序并保留额外空组。性状表列由 `species`/`trait` 选择，分组表列由 `species`/`group` 选择。输入不会被修改，CSC 输入不展开为稠密群落矩阵或长出现记录。分组由调用者提供，物种聚类与地理绘图分别处理。
 
+## 混合性状与功能 beta
+
+`functional_groups` 根据数值与类别性状，通过 k-prototypes 将物种分为 `k` 组；`collapse_traits` 将群落按该映射聚合；`functional_beta` 对功能组的存在/缺失计算 Sørensen 或 Jaccard beta 分解。
+
+```julia
+using EvoKits, DataFrames, SparseArrays, Random
+
+data = CommunityData(sparse([1 1 0 0; 0 0 1 1; 1 0 1 0]);
+    species_labels = ["A", "B", "C", "D"], sample_labels = ["west", "east", "mixed"])
+traits = DataFrame(species = ["C", "A", "D", "B"],
+    height = [10.0, 0.0, 12.0, 2.0], form = ["b", "a", "b", "a"])
+
+groups = functional_groups(data, traits; k = 2, numeric_scale = :none,
+    gamma = 10, nstart = 10, rng = MersenneTwister(42))
+groups.membership             # [1, 1, 2, 2]，按 data 的物种列序
+counts = collapse_traits(data, groups; statistic = :richness)
+fb = functional_beta(data, groups)
+fb.community.matrix           # 稀疏功能组群落
+fb.beta.total                 # 群落两两功能 beta 总差异
+regions = phyloregion(fb.beta; k = 2)
+
+# 也可直接拟合并计算。
+fb = functional_beta(data, traits; k = 2, rng = MersenneTwister(42))
+```
+
+聚类距离为数值性状的加权平方差，加上 `gamma` 乘以类别性状的加权不匹配数。默认 `numeric_scale=:sd` 使用样本标准差；也可选择 `:range` 或 `:none`。常量列的尺度设为一。`trait_weights=Dict(:height => 2.0, :form => 0.5)` 可单独设置正权重；默认 `gamma=:auto` 令全部物种对的平均数值贡献与类别贡献相等，任一贡献为零时取一。类别值支持字符串、Symbol、Bool，以及通过 `categorical_traits` 显式指定的数值编码；同一数值类别列必须使用相同具体类型。
+
+表格拟合使用全部物种；数据对象拟合按群落的完整物种列序选择，包括全零列。物种按名称精确匹配；缺失映射或性状默认报错，`missing_traits=:skip` 显式跳过并在结果的 `excluded_species` 中报告。`trait_cols` 可指定使用的性状列。
+
+每次随机起点选取不同物种；多次起点返回目标值最低的结果。空组由距离最远且所在组多于一个物种的成员填充，类别众数并列取字典序较小值。结果提供 `objective`、`iterations` 和 `converged`；这是局部优化，不能保证全局最优。需要复现时传入固定状态的 `rng`。结果中的数值中心采用 `(值 - numeric_offsets) / numeric_scales` 坐标，物种映射可跨群落复用。
+
+`collapse_traits` 支持 `:presence`、`:richness`、`:abundance` 及行比例归一化，保留全部功能组和空群落。`functional_beta` 可传 `pairs` 只计算指定群落对；其 beta 始终基于功能组是否出现，`statistic=:abundance` 只改变返回的聚合群落数值。未实现 R 的 `quick_elbow` 自动选组数；本实现的尺度和初始化规则是上面明确列出的约定，不承诺与 R 随机分组逐项相同。
+
+已用本地 clustMixType 0.5.2 对照 40 个案例：对齐尺度、权重与初始原型后，分组、目标值、原型、稀疏聚合及 beta 一致。自动权重默认值、并列分配和重复/空组处理按各自约定；普通 Julia 测试读取六个固定 R 案例，不需要 R 环境。
+
 ## 树分组与谱系群落聚合
 
 `get_clades` 将完整的定年等时树按“距今时间”切分为互不重叠的谱系组，返回 `CladeGroupingResult`，包括树 tip 顺序的 `tip_labels`、`membership`，按首个 tip 排序的 `group_labels`、`group_sizes`、`group_nodes`（CompactTree 原始节点 ID），以及截面元数据。树不修剪、不修改。

@@ -365,6 +365,69 @@ Inputs are not mutated, and CSC input is never expanded into a dense community
 or a long occurrence table. Groups must be supplied; clustering and geographic
 mapping are separate operations.
 
+## Mixed traits and functional beta
+
+`functional_groups` clusters numeric and categorical species traits using
+k-prototypes. `collapse_traits` aggregates a community by that reusable mapping;
+`functional_beta` applies the existing Sørensen or Jaccard decomposition to
+presence of the resulting functional groups.
+
+```julia
+using EvoKits, DataFrames, SparseArrays, Random
+
+data = CommunityData(sparse([1 1 0 0; 0 0 1 1; 1 0 1 0]);
+    species_labels = ["A", "B", "C", "D"], sample_labels = ["west", "east", "mixed"])
+traits = DataFrame(species = ["C", "A", "D", "B"],
+    height = [10.0, 0.0, 12.0, 2.0], form = ["b", "a", "b", "a"])
+
+groups = functional_groups(data, traits; k = 2, numeric_scale = :none,
+    gamma = 10, nstart = 10, rng = MersenneTwister(42))
+groups.membership            # [1, 1, 2, 2], in data species-column order
+counts = collapse_traits(data, groups; statistic = :richness)
+fb = functional_beta(data, groups)
+fb.community.matrix          # sparse functional-group community
+fb.beta.total                # pairwise functional beta dissimilarity
+regions = phyloregion(fb.beta; k = 2)
+
+# Fit and calculate in one call.
+fb = functional_beta(data, traits; k = 2, rng = MersenneTwister(42))
+```
+
+The objective sums weighted squared numeric differences and weighted categorical
+mismatches multiplied by `gamma`. Numeric traits use sample SD by default;
+`numeric_scale=:range` or `:none` are also available, with constant traits
+given scale one. Set positive per-column weights with e.g.
+`trait_weights=Dict(:height => 2.0, :form => 0.5)`. The default `gamma=:auto`
+balances mean numeric and categorical contributions over all species pairs;
+it is one when either contribution is zero. Strings, symbols, Bool, and numeric
+codes selected by `categorical_traits` are categorical. Numeric codes in one
+categorical column must have the same concrete type.
+
+Fitting a table uses all its species. Fitting with `data` selects the complete
+community species-column domain, including all-zero columns. Names match
+exactly; missing mappings or traits fail unless `missing_traits=:skip` is
+explicit, in which case results report `excluded_species`. Select traits with
+`trait_cols`. Numeric centers use `(value - numeric_offsets) / numeric_scales`.
+
+Each start samples distinct species. The lowest-objective start is returned;
+empty groups take a farthest species from a group with multiple members, and
+ties in categorical modes use lexicographic order. Check `converged` and
+`iterations`: this is a local optimizer and need not find the global minimum.
+Pass a reproducibly seeded `rng` to reproduce starts and results.
+
+`collapse_traits` supports `:presence`, `:richness`, `:abundance` and row
+proportions, retaining every functional group and empty site. `functional_beta`
+supports selected `pairs`; beta always uses group presence, even when the
+returned community contains abundances. R's `quick_elbow` automatic group count
+is not implemented. Scaling and initialization follow the rules above and do
+not promise identical random clusters to R.
+
+Forty cases were checked against local clustMixType 0.5.2. With matching
+scales, weights and initial prototypes, memberships, objectives, prototypes,
+sparse aggregation and beta components agree. Default weight estimation,
+ties and duplicate/empty-group handling retain their documented differences.
+Ordinary Julia tests read six saved R cases and require no R environment.
+
 ## Tree groups and lineage communities
 
 `get_clades` partitions a complete dated, ultrametric tree at an age before

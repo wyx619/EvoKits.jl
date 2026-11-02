@@ -82,6 +82,11 @@ export map_trait
 export aggregate_species
 export LineageCommunityResult
 export collapse_range
+export FunctionalGroupingResult
+export functional_groups
+export collapse_traits
+export FunctionalBetaResult
+export functional_beta
 export PhyloregionResult
 export phyloregion
 export PhyloregionContext
@@ -176,6 +181,7 @@ include("community/diversity.jl")
 include("community/data_metrics.jl")
 include("community/aggregation.jl")
 include("community/lineage_aggregation.jl")
+include("community/functional_beta.jl")
 include("community/regionalization.jl")
 include("community/regionalization_context.jl")
 include("community/regionalization_selection.jl")
