@@ -74,6 +74,9 @@ export CommunityContext
 export prepare_community
 export CommunityData
 export align_community
+export CommunityTraitResult
+export map_trait
+export aggregate_species
 export ses_pd
 export ses_pd_dataframe
 export ses_mpd
@@ -155,6 +158,7 @@ include("community/taxonomic_beta.jl")
 include("community/context.jl")
 include("community/diversity.jl")
 include("community/data_metrics.jl")
+include("community/aggregation.jl")
 include("community/nri_nti.jl")
 include("community/ses.jl")
 include("community/nri_nti_table.jl")

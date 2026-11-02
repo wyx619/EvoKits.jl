@@ -203,6 +203,33 @@ second_batch = phylobeta(ctx; index_family = :jaccard, pairs = [(2, 1)])
 
 原矩阵、树或标签后续发生变化时，上下文仍使用准备时的快照；分析新数据需要重新准备。可以独立修改返回结果；上下文内部数组应视为只读。准备过程会保留分支集合及汇总值，因此有一次性的时间和内存成本，适合同一数据的重复分析。上下文不保留原始树和矩阵，也不缓存完整群落间矩阵；完整矩阵调用仍执行两两计算并分配输出，指定群落对调用仅分配请求的结果。
 
+## 群落性状与物种分组
+
+`map_trait` 按群落汇总一个数值性状，`aggregate_species` 按既定分组聚合物种。两者均接受稠密/CSC 矩阵或 `CommunityData`；性状和分组可用按物种列顺序的向量、按物种名索引的字典或 `DataFrame` 提供。按名称精确匹配，表格物种禁止重复。矩阵入口可指定 `species_labels` 和 `sample_labels`。
+
+```julia
+using EvoKits, SparseArrays, DataFrames
+
+data = CommunityData(sparse([2 1 0; 0 3 1; 0 0 0]);
+    species_labels = ["A", "B", "C"], sample_labels = ["AB", "BC", "empty"])
+traits = DataFrame(species = ["C", "A", "B"], trait = [-2.0, 2.0, 6.0])
+summary = map_trait(data, traits; statistic = :mean, abundance_weighted = true)
+summary.values # [10/3, 4, NaN]
+summary.matched_richness # [2, 2, 0]
+
+groups = Dict("A" => "group_1", "B" => "group_1", "C" => "group_2")
+grouped = aggregate_species(data, groups) # 各群落每组的物种数
+proportions = aggregate_species(data, groups;
+    abundance_weighted = true, normalize = true)
+beta_diss(grouped) # 分组后的 CommunityData 可直接用于分类指标
+```
+
+`map_trait` 返回 `CommunityTraitResult`，包含汇总 `values`、群落标签、原始 `richness`、实际使用的 `matched_richness` 和 `weight_sum`，以及选项信息。`statistic` 支持 `:sum`（默认）、`:mean`、`:sd`。默认每个存在物种计一次；`abundance_weighted=true` 使用原丰度。加权标准差将丰度解释为可靠性权重，校正分母为 `sum(w) - sum(w^2)/sum(w)`；单位权重时等于样本标准差。`corrected=false` 使用总体标准差分母 `sum(w)`。加权均值和标准差不受权重整体缩放影响，整数丰度不会展开成重复记录。数值汇总使用 Float64，溢出时报错；求和补偿相消误差，标准差先中心化再在线更新。
+
+默认遇到存在物种缺少性状或分组时报错；可设置 `missing_traits=:skip` 或 `missing_groups=:skip` 跳过。未出现的物种可以没有映射，多余映射物种会忽略。数值性状用 Julia `missing` 表示缺失；匹配到的 NaN、Inf 或非数值性状会报错。空群落和全部被跳过的群落保留标签：总和为零，均值/标准差为 `NaN`，使用权重为零。仅一个匹配物种时，校正标准差为 `NaN`，总体标准差为零。
+
+`aggregate_species` 返回新的 `CommunityData`，CSC 列对应物种组。默认统计每组存在的物种数；`abundance_weighted=true` 汇总丰度并保留数值类型（Bool 转 Int）。`normalize=true` 返回各群落保留分组的 Float64 比例，空行仍为零。组名使用字符串或整数，默认按输入物种列首次出现的组排序，包含已映射零列对应的组；`group_labels` 可固定完整顺序并保留额外空组。性状表列由 `species`/`trait` 选择，分组表列由 `species`/`group` 选择。输入不会被修改，CSC 输入不展开为稠密群落矩阵或长出现记录。分组由调用者提供，物种聚类与地理绘图分别处理。
+
 ## NRI 和 NTI
 
 对于单个观测群落及其本地物种池，使用 `nri_nti`：

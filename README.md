@@ -309,6 +309,62 @@ intended for reuse. It does not retain the input tree or matrix, or cache full
 pairwise matrices. Full matrix calls still perform pairwise calculations and
 allocate their outputs; selected-pair calls allocate only requested results.
 
+## Community traits and species groups
+
+`map_trait` summarizes one numeric trait per site, and `aggregate_species`
+combines species into predefined groups. Both accept a dense/CSC matrix or
+`CommunityData`. Supply a vector in species-column order, a species-keyed
+dictionary, or a `DataFrame`; table species must be unique and names match
+exactly. Matrix calls can set `species_labels` and `sample_labels`.
+
+```julia
+using EvoKits, SparseArrays, DataFrames
+
+data = CommunityData(sparse([2 1 0; 0 3 1; 0 0 0]);
+    species_labels = ["A", "B", "C"], sample_labels = ["AB", "BC", "empty"])
+traits = DataFrame(species = ["C", "A", "B"], trait = [-2.0, 2.0, 6.0])
+summary = map_trait(data, traits; statistic = :mean, abundance_weighted = true)
+summary.values # [10/3, 4, NaN]
+summary.matched_richness # [2, 2, 0]
+
+groups = Dict("A" => "group_1", "B" => "group_1", "C" => "group_2")
+grouped = aggregate_species(data, groups) # species counts per group
+proportions = aggregate_species(data, groups;
+    abundance_weighted = true, normalize = true)
+beta_diss(grouped) # grouped CommunityData works with taxonomic metrics
+```
+
+`map_trait` returns `CommunityTraitResult`: `values`, `sample_labels`, input
+`richness`, used `matched_richness`, used `weight_sum`, and option metadata.
+`statistic` is `:sum` (default), `:mean`, or `:sd`. By default every present
+species contributes once; `abundance_weighted=true` uses original abundances.
+Weighted SD uses reliability weights: the corrected denominator is
+`sum(w) - sum(w^2)/sum(w)`, reducing to sample SD for unit weights. Set
+`corrected=false` for population SD. Weighted mean/SD are invariant to common
+weight scaling; integer abundances are not expanded into repeated records.
+Numeric summaries use Float64; overflowing arithmetic is rejected. Summation
+compensates for cancellation, and SD centers traits before online updates.
+
+Missing traits or mappings for present species fail by default. Set
+`missing_traits=:skip` or `missing_groups=:skip` to omit them. Unobserved
+species may be unmapped; extra mapping species are ignored. Missing numeric
+traits use Julia `missing`; matched NaN/Inf or nonnumeric traits are errors.
+Empty/unmatched sites retain their labels and have zero sum, NaN mean/SD,
+and zero used weight. Corrected SD with one matched species is NaN;
+population SD is zero.
+
+`aggregate_species` returns a new `CommunityData` whose CSC columns are groups.
+By default entries count present species; `abundance_weighted=true` sums
+abundance and preserves numeric type (Bool becomes Int). `normalize=true`
+produces Float64 row proportions over retained groups; empty rows stay zero.
+Group names are strings or integer identifiers. Columns follow first occurrence
+in community species order, including mapped zero columns; `group_labels`
+sets a complete order and can retain extra empty groups. Table selectors are
+`species`/`trait` for `map_trait` and `species`/`group` for `aggregate_species`.
+Inputs are not mutated, and CSC input is never expanded into a dense community
+or a long occurrence table. Groups must be supplied; clustering and geographic
+mapping are separate operations.
+
 ## NRI and NTI
 
 For a single observed community and a local species pool, use `nri_nti`:
