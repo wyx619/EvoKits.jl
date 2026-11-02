@@ -230,6 +230,42 @@ beta_diss(grouped) # 分组后的 CommunityData 可直接用于分类指标
 
 `aggregate_species` 返回新的 `CommunityData`，CSC 列对应物种组。默认统计每组存在的物种数；`abundance_weighted=true` 汇总丰度并保留数值类型（Bool 转 Int）。`normalize=true` 返回各群落保留分组的 Float64 比例，空行仍为零。组名使用字符串或整数，默认按输入物种列首次出现的组排序，包含已映射零列对应的组；`group_labels` 可固定完整顺序并保留额外空组。性状表列由 `species`/`trait` 选择，分组表列由 `species`/`group` 选择。输入不会被修改，CSC 输入不展开为稠密群落矩阵或长出现记录。分组由调用者提供，物种聚类与地理绘图分别处理。
 
+## 树分组与谱系群落聚合
+
+`get_clades` 将完整的定年等时树按“距今时间”切分为互不重叠的谱系组，返回 `CladeGroupingResult`，包括树 tip 顺序的 `tip_labels`、`membership`，按首个 tip 排序的 `group_labels`、`group_sizes`、`group_nodes`（CompactTree 原始节点 ID），以及截面元数据。树不修剪、不修改。
+
+```julia
+mktempdir() do dir
+    path = joinpath(dir, "tree.nwk")
+    write_tree(path, "(((A:1,B:1):1,C:2):2,(D:2,E:2):2);")
+    tree = read_tree(path)
+    groups = get_clades(tree; cut = 2)
+    groups.membership     # [1,1,1,2,2]
+    groups.group_labels   # ["clade_1", "clade_2"]
+    groups.group_nodes    # 原始树节点 ID，不是 tip 列位置
+
+    data = CommunityData(sparse([2 4 0 0 0; 0 0 5 1 2; 0 0 0 0 0]);
+        species_labels = tree.tip_labels, sample_labels = ["ab", "cde", "empty"])
+    collapsed = collapse_range(data, groups) # 复用完整树分组
+    collapsed.community.matrix              # [1 0; 1 1; 0 0]
+    counts = collapse_range(data, tree; cut = 2, statistic = :richness)
+    counts.community.matrix                 # [2 0; 1 2; 0 0]
+    mass = collapse_range(data, groups; statistic = :abundance)
+    mass.community.matrix                   # [6 0; 5 3; 0 0]
+    beta_diss(collapsed.community)           # 可直接接分类 beta
+end
+```
+
+`cut` 和目标 `k` 必须且只能指定一项。显式截面上的节点，默认 `boundary=:older` 保留整支为一组，`:younger` 则展开。截面等于树高时 older 为一组；cut=0 时 older 可能保留零龄谱系，younger 则全部为单 tip。边界精确比较当前表示的年龄，不加 epsilon。
+
+目标 `k` 按完整分支事件展开，多分叉或同龄节点一起处理，实际分组数可能超过目标。例如上树 `get_clades(tree; k=3)` 返回 `requested_k=3`、`actual_k=4`、`cut=2`、`boundary=:younger`。用结果的 cut 与 boundary 再调用可重现同一分组。k 模式不另指定 boundary，k=1 保留根，合法范围 1:ntips；单子节点不增加组数。
+
+节点年龄由最长后代路径计算，避免长根干下的短近期枝被相减丢失。等时性比较根到 tip 的最长/最短路径，默认 `atol=0.0, rtol=1e-8`；容差仅校验树，不合并近似同龄事件。接受的近似等时树也按最长后代路径取节点年龄。枝长须有限且非负、路径和有限；非等时树报错，由调用者先明确完成定年或变换。显式截面耗时/存储 O(节点数+tip数)，目标 k 另排序分支事件，不构造完整 tip 距离矩阵或为每个节点存全套后代集合。
+
+`collapse_range` 接树及截面参数，或接可复用的 `CladeGroupingResult`。返回 `LineageCommunityResult`，包含 CSC `CommunityData` 的 `community`、独立分组 `grouping`、`statistic` 与 `normalize`。默认 `:presence` 每群落每谱系至多计一次；`:richness` 计组内存在物种数；`:abundance` 汇总原丰度并保留类型（Bool 转 Int），检查求和溢出。`normalize=true` 在选定统计量之后归一化，空行仍为零。矩阵入口用 `tip_labels`、`sample_labels`，默认按完整树/分组的 tip 列序。
+
+物种按名称精确匹配，未出现树物种贡献零值，完整树的全部组列保留；任何未知物种均报错，包括零列。不因物种缺失而稠密补零，也不转成长表或构造稠密分组矩阵。输入不修改，结果数组独立；可复用分组的内部数组应只读。聚合列已是谱系组，可接 `beta_diss`；原物种树不能直接当作这些组的树使用。本操作也不同于截短枝长的树时间切片。
+
 ## 基于 beta 多样性的生物地理分区
 
 `phyloregion` 接收完整距离矩阵，默认使用 UPGMA（平均连接）层次聚类，按显式指定的 `k` 划分区域。也可直接接收完整的 `BetaDissResult`、`PhylobetaResult`，保留群落标签；`component` 可选 `:total`（默认）、`:turnover`、`:nestedness`。

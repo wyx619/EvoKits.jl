@@ -24,6 +24,8 @@ export distances_to_tip
 export descendant_tips
 export clade_members
 export subtree_at_node
+export CladeGroupingResult
+export get_clades
 export node_depths
 export tree_imbalance
 export gamma_statistic
@@ -77,6 +79,8 @@ export align_community
 export CommunityTraitResult
 export map_trait
 export aggregate_species
+export LineageCommunityResult
+export collapse_range
 export PhyloregionResult
 export phyloregion
 export PhyloregionContext
@@ -142,6 +146,7 @@ include("tree/validation.jl")
 include("tree/query.jl")
 include("tree/distances.jl")
 include("tree/clades.jl")
+include("tree/clade_groups.jl")
 include("tree/pruning.jl")
 include("tree/mapping.jl")
 include("tree/transforms.jl")
@@ -168,6 +173,7 @@ include("community/context.jl")
 include("community/diversity.jl")
 include("community/data_metrics.jl")
 include("community/aggregation.jl")
+include("community/lineage_aggregation.jl")
 include("community/regionalization.jl")
 include("community/regionalization_context.jl")
 include("community/regionalization_selection.jl")

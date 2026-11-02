@@ -365,6 +365,79 @@ Inputs are not mutated, and CSC input is never expanded into a dense community
 or a long occurrence table. Groups must be supplied; clustering and geographic
 mapping are separate operations.
 
+## Tree groups and lineage communities
+
+`get_clades` partitions a complete dated, ultrametric tree at an age before
+the present, returning a `CladeGroupingResult` with tip-to-group membership,
+group sizes, source CompactTree node IDs and cut metadata. Groups are numbered
+by their first input tip; `tip_labels` and `membership` follow tree tip order.
+No tree is pruned or changed.
+
+```julia
+mktempdir() do dir
+    path = joinpath(dir, "tree.nwk")
+    write_tree(path, "(((A:1,B:1):1,C:2):2,(D:2,E:2):2);")
+    tree = read_tree(path)
+    groups = get_clades(tree; cut = 2)
+    groups.membership     # [1,1,1,2,2]
+    groups.group_labels   # ["clade_1", "clade_2"]
+    groups.group_nodes    # source node IDs, not tip positions
+
+    data = CommunityData(sparse([2 4 0 0 0; 0 0 5 1 2; 0 0 0 0 0]);
+        species_labels = tree.tip_labels, sample_labels = ["ab", "cde", "empty"])
+    collapsed = collapse_range(data, groups) # reuse the full-tree grouping
+    collapsed.community.matrix              # [1 0; 1 1; 0 0]
+    counts = collapse_range(data, tree; cut = 2, statistic = :richness)
+    counts.community.matrix                 # [2 0; 1 2; 0 0]
+    mass = collapse_range(data, groups; statistic = :abundance)
+    mass.community.matrix                   # [6 0; 5 3; 0 0]
+    beta_diss(collapsed.community)           # direct downstream input
+end
+```
+
+Supply exactly one of `cut` or target `k`. At a node exactly on an explicit
+cut, `boundary=:older` (default) keeps the whole clade; `:younger` splits it.
+At tree height, older gives one group. At cut=0, older can retain zero-age
+clades; younger always gives singleton tips. Comparisons use represented ages
+exactly, without an epsilon. For target k, simultaneous events and
+multifurcations are split together; `actual_k` may exceed `requested_k`:
+
+```julia
+# For the tree above:
+# groups = get_clades(tree; k = 3)
+# groups.actual_k == 4, groups.cut == 2, groups.boundary == :younger
+# get_clades(tree; cut=groups.cut, boundary=groups.boundary) reproduces the cut.
+```
+
+With k, boundary is chosen by the event; do not also specify `boundary`.
+`k=1` keeps the root, and valid targets are 1:ntips. Unary nodes do not increase
+the count. Ages use longest descendant paths, preserving short young branches
+below long stems. Ultrametricity compares shortest/longest root-to-tip paths
+with `atol=0.0`, `rtol=1e-8`; these tolerances validate the tree, not event ties.
+Accepted near-ultrametric trees use longest descendant paths for node ages.
+Branch lengths must be finite/nonnegative and path sums finite. Non-ultrametric
+trees fail; date or transform them explicitly before calling. An explicit cut
+uses O(nodes+tips) work/storage; target k also sorts branching events. No full
+matrix of pairwise tip distances or descendant sets for every node is built.
+
+`collapse_range` accepts a tree plus those cut keywords, or a prepared
+`CladeGroupingResult`. It returns a `LineageCommunityResult` with labeled CSC
+`community`, an independent `grouping`, `statistic` and `normalize` fields.
+Default `:presence` is 0/1 per lineage; `:richness` counts present species;
+`:abundance` sums original values and preserves their type (Bool becomes Int).
+`normalize=true` computes row proportions after the chosen statistic, retaining
+empty rows as zero; sums are checked for overflow. Matrix inputs use
+`tip_labels` and `sample_labels`, defaulting to the complete tree/group tip order.
+
+Name matching is exact. Missing tree species contribute zero, all full-tree
+group columns are retained, and unknown species fail even if their column is
+zero. Neither sparse input nor absent tree tips are expanded into dense padded
+data, a dense membership matrix or a long occurrence table. Returned arrays
+are independent; treat a reusable grouping's arrays as read-only. Group columns
+are lineage identifiers: pass the collapsed community to `beta_diss`; the
+original species tree cannot be used as a tree of these groups. This operation
+does not truncate branch lengths as a tree time-slicing operation would.
+
 ## Regionalization from beta diversity
 
 `phyloregion` clusters a complete distance matrix and cuts the full hierarchy

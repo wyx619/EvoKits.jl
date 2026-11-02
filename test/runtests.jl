@@ -11,6 +11,7 @@ include("ses_sparse.jl")
 include("community_aggregation.jl")
 include("community_regionalization.jl")
 include("regionalization_linkage.jl")
+include("lineage_groups.jl")
 
 @testset "Tree file I/O" begin
     mktempdir() do dir
