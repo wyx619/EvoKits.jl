@@ -66,6 +66,7 @@ mutable struct _NriMetricsWorkspace
     first_child::Vector{Int32}
     next_sibling::Vector{Int32}
     counts::Vector{Int32}
+    edge_lengths::Vector{Float64}
     down::Vector{Float64}
     updist::Vector{Float64}
     marks::Vector{Int32}
@@ -75,7 +76,7 @@ end
 function _NriMetricsWorkspace(tree::CompactTree)
     return _NriMetricsWorkspace(
         Int32[], Int32[], Int32[], Int32[], Int32[], Int32[], Int32[],
-        Float64[], Float64[], zeros(Int32, tree.nnodes), Int32(0),
+        Float64[], Float64[], Float64[], zeros(Int32, tree.nnodes), Int32(0),
     )
 end
 
@@ -95,6 +96,7 @@ function _nri_community_metrics!(
     tip_positions::AbstractVector{<:Integer},
     index::_TreeQueryIndex,
     workspace::_NriMetricsWorkspace,
+    edge_of_child::Union{Nothing, Vector{Int32}} = nothing,
 )
     richness = length(tip_positions)
     selected_nodes = workspace.selected_nodes
@@ -136,14 +138,30 @@ function _nri_community_metrics!(
 
     first_child = workspace.first_child
     next_sibling = workspace.next_sibling
+    edge_lengths = workspace.edge_lengths
     resize!(first_child, m)
     resize!(next_sibling, m)
+    resize!(edge_lengths, m)
+    edge_lengths[1] = 0.0
     fill!(first_child, Int32(0))
     fill!(next_sibling, Int32(0))
     @inbounds for i in 2:m
         parent = Int(parent_index[i])
         next_sibling[i] = first_child[parent]
         first_child[parent] = Int32(i)
+        node, ancestor = virtual_nodes[i], virtual_nodes[parent]
+        depth, ancestor_depth = tree.dist_from_root[node], tree.dist_from_root[ancestor]
+        segment_length = depth - ancestor_depth
+        # SES supplies the edge index so short paths beneath a long common
+        # root can be summed directly when depth subtraction loses precision.
+        if edge_of_child !== nothing && segment_length <= sqrt(eps(Float64)) * max(abs(depth), abs(ancestor_depth))
+            segment_length = 0.0
+            while node != ancestor
+                segment_length += tree.edge_length[edge_of_child[node]]
+                node = tree.parent_of_node[node]
+            end
+        end
+        edge_lengths[i] = segment_length
     end
 
     counts = workspace.counts
@@ -165,7 +183,7 @@ function _nri_community_metrics!(
     pair_sum = 0.0
     @inbounds for i in m:-1:2
         parent = Int(parent_index[i])
-        edge_length = tree.dist_from_root[Int(virtual_nodes[i])] - tree.dist_from_root[Int(virtual_nodes[parent])]
+        edge_length = edge_lengths[i]
         count = counts[i]
         pair_sum += edge_length * count * (richness - count)
         counts[parent] += count
@@ -179,7 +197,7 @@ function _nri_community_metrics!(
         child = first_child[parent]
         while child != 0
             c = Int(child)
-            edge_length = tree.dist_from_root[Int(virtual_nodes[c])] - tree.dist_from_root[Int(virtual_nodes[parent])]
+            edge_length = edge_lengths[c]
             candidate = down[c] + edge_length
             if candidate < best1
                 best2, best1, best_child = best1, candidate, child
@@ -191,7 +209,7 @@ function _nri_community_metrics!(
         child = first_child[parent]
         while child != 0
             c = Int(child)
-            edge_length = tree.dist_from_root[Int(virtual_nodes[c])] - tree.dist_from_root[Int(virtual_nodes[parent])]
+            edge_length = edge_lengths[c]
             sibling_best = child == best_child ? best2 : best1
             updist[c] = edge_length + min(updist[parent], sibling_best)
             child = next_sibling[c]
@@ -205,7 +223,7 @@ function _nri_community_metrics!(
         child = first_child[i]
         while child != 0
             c = Int(child)
-            edge_length = tree.dist_from_root[Int(virtual_nodes[c])] - tree.dist_from_root[Int(virtual_nodes[i])]
+            edge_length = edge_lengths[c]
             child_best = min(child_best, down[c] + edge_length)
             child = next_sibling[c]
         end

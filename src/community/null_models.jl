@@ -25,57 +25,6 @@ end
     return rank_count
 end
 
-function _randomize_richness!(dest::Matrix{Bool}, richness::Vector{Int}, rng::AbstractRNG)
-    fill!(dest, false)
-    nspecies = size(dest, 2)
-    @inbounds for i in axes(dest, 1)
-        r = richness[i]
-        r <= 0 && continue
-        cols = randperm(rng, nspecies)
-        for k in 1:r
-            dest[i, cols[k]] = true
-        end
-    end
-    return dest
-end
-
-function _randomize_frequency!(dest::Matrix{Bool}, freq::Vector{Int}, rng::AbstractRNG)
-    fill!(dest, false)
-    nsamples = size(dest, 1)
-    @inbounds for j in axes(dest, 2)
-        f = freq[j]
-        f <= 0 && continue
-        rows = randperm(rng, nsamples)
-        for k in 1:f
-            dest[rows[k], j] = true
-        end
-    end
-    return dest
-end
-
-function _randomize_taxa_labels!(dest::Matrix{Bool}, presence::Matrix{Bool}, rng::AbstractRNG)
-    perm = randperm(rng, size(presence, 2))
-    @inbounds for i in axes(presence, 1), j in axes(presence, 2)
-        dest[i, j] = presence[i, perm[j]]
-    end
-    return dest
-end
-
-@inline function _swap_checkerboard!(m::Matrix{Bool}, i::Int, j::Int, k::Int, l::Int)
-    a = m[i, k]
-    b = m[i, l]
-    c = m[j, k]
-    d = m[j, l]
-    if (a && d && !b && !c) || (!a && !d && b && c)
-        m[i, k] = c
-        m[j, k] = a
-        m[i, l] = d
-        m[j, l] = b
-        return true
-    end
-    return false
-end
-
 function _random_pair(rng::AbstractRNG, n::Int)
     n >= 2 || throw(ArgumentError("swap null models require at least two rows and two columns"))
     a = rand(rng, 1:n)
@@ -84,39 +33,132 @@ function _random_pair(rng::AbstractRNG, n::Int)
     return a, b
 end
 
-function _randomize_trialswap!(dest::Matrix{Bool}, presence::Matrix{Bool}, iterations::Integer, rng::AbstractRNG)
-    copyto!(dest, presence)
-    nrow, ncol = size(dest)
-    (nrow >= 2 && ncol >= 2) || return dest
-    @inbounds for _ in 1:iterations
-        i, j = _random_pair(rng, nrow)
-        k, l = _random_pair(rng, ncol)
-        _swap_checkerboard!(dest, i, j, k, l)
-    end
-    return dest
+"""Reusable sorted presence rows and O(nsites + nspecies) permutation buffers."""
+struct _CommunityNullWorkspace
+    rows::Vector{Vector{Int32}}
+    richness::Vector{Int}
+    frequency::Vector{Int}
+    species_permutation::Vector{Int}
+    inverse_permutation::Vector{Int}
+    site_permutation::Vector{Int}
 end
 
-function _randomize_independentswap!(
-    dest::Matrix{Bool},
-    presence::Matrix{Bool},
-    iterations::Integer,
-    rng::AbstractRNG;
-    max_attempts_per_swap::Integer = 10_000,
-)
-    copyto!(dest, presence)
-    nrow, ncol = size(dest)
-    (nrow >= 2 && ncol >= 2) || return dest
-    @inbounds for _ in 1:iterations
+function _CommunityNullWorkspace(observed, nspecies)
+    frequency = zeros(Int, nspecies)
+    for row in observed, tip in row
+        frequency[tip] += 1
+    end
+    rows = [sizehint!(Int32[], length(row)) for row in observed]
+    return _CommunityNullWorkspace(rows, length.(observed), frequency,
+        Vector{Int}(undef, nspecies), Vector{Int}(undef, nspecies),
+        Vector{Int}(undef, length(observed)))
+end
+
+function _randomize_richness!(workspace::_CommunityNullWorkspace, rng)
+    for (site, row) in enumerate(workspace.rows)
+        richness = workspace.richness[site]
+        resize!(row, richness)
+        richness == 0 && continue
+        # Reuse the full shuffle buffer to retain historical RNG consumption.
+        # Storage is linear in species, never sites times species.
+        randperm!(rng, workspace.species_permutation)
+        for k in 1:richness
+            row[k] = Int32(workspace.species_permutation[k])
+        end
+        sort!(row)
+    end
+    return workspace.rows
+end
+
+function _randomize_frequency!(workspace::_CommunityNullWorkspace, rng)
+    foreach(empty!, workspace.rows)
+    for (tip, frequency) in enumerate(workspace.frequency)
+        frequency == 0 && continue
+        randperm!(rng, workspace.site_permutation)
+        for k in 1:frequency
+            push!(workspace.rows[workspace.site_permutation[k]], Int32(tip))
+        end
+    end
+    return workspace.rows
+end
+
+function _randomize_taxa_labels!(workspace::_CommunityNullWorkspace, source, rng)
+    randperm!(rng, workspace.species_permutation)
+    for (target, origin) in enumerate(workspace.species_permutation)
+        workspace.inverse_permutation[origin] = target
+    end
+    # source may be workspace.rows for phylogeny_pool. Each row is remapped
+    # in place after the common permutation has been constructed.
+    for site in eachindex(source)
+        row, observed = workspace.rows[site], source[site]
+        resize!(row, length(observed))
+        for k in eachindex(observed)
+            row[k] = Int32(workspace.inverse_permutation[observed[k]])
+        end
+        sort!(row)
+    end
+    return workspace.rows
+end
+
+@inline function _ses_contains(row, tip)
+    index = searchsortedfirst(row, tip)
+    return index <= length(row) && row[index] == tip
+end
+
+function _ses_replace_tip!(row, old, new)
+    deleteat!(row, searchsortedfirst(row, old))
+    insert!(row, searchsortedfirst(row, new), Int32(new))
+    return row
+end
+
+function _swap_checkerboard!(rows::Vector{Vector{Int32}}, i, j, k, l)
+    left, right = rows[i], rows[j]
+    a, b = _ses_contains(left, k), _ses_contains(left, l)
+    c, d = _ses_contains(right, k), _ses_contains(right, l)
+    if a && d && !b && !c
+        _ses_replace_tip!(left, k, l)
+        _ses_replace_tip!(right, l, k)
+    elseif !a && !d && b && c
+        _ses_replace_tip!(left, l, k)
+        _ses_replace_tip!(right, k, l)
+    else
+        return false
+    end
+    return true
+end
+
+function _randomize_swaps!(workspace, observed, model, iterations, max_attempts, rng)
+    for (row, source) in zip(workspace.rows, observed)
+        resize!(row, length(source))
+        copyto!(row, source)
+    end
+    nrow, ncol = length(observed), length(workspace.frequency)
+    (nrow >= 2 && ncol >= 2) || return workspace.rows
+    attempts = model === :trialswap ? 1 : max_attempts
+    for _ in 1:iterations
         swapped = false
-        for _attempt in 1:max_attempts_per_swap
+        for _ in 1:attempts
             i, j = _random_pair(rng, nrow)
             k, l = _random_pair(rng, ncol)
-            if _swap_checkerboard!(dest, i, j, k, l)
+            if _swap_checkerboard!(workspace.rows, i, j, k, l)
                 swapped = true
                 break
             end
         end
-        swapped || break
+        !swapped && model === :independentswap && break
     end
-    return dest
+    return workspace.rows
+end
+
+function _randomize_community!(workspace, observed, model, iterations, max_attempts, rng)
+    if model === :taxa_labels
+        return _randomize_taxa_labels!(workspace, observed, rng)
+    elseif model === :frequency
+        return _randomize_frequency!(workspace, rng)
+    elseif model in (:richness, :sample_pool, :phylogeny_pool)
+        _randomize_richness!(workspace, rng)
+        model === :phylogeny_pool && _randomize_taxa_labels!(workspace, workspace.rows, rng)
+        return workspace.rows
+    end
+    return _randomize_swaps!(workspace, observed, model, iterations, max_attempts, rng)
 end

@@ -155,21 +155,26 @@ function _community_pairwise(f, branches, lengths)
     return result
 end
 
+# Build feature-by-site CSC storage from sorted, unique per-site sets.
+function _community_incidence(sets, nfeatures)
+    pointers = Vector{Int}(undef, length(sets) + 1)
+    pointers[1] = 1
+    for site in eachindex(sets)
+        pointers[site + 1] = pointers[site] + length(sets[site])
+    end
+    indices = Vector{Int}(undef, last(pointers) - 1)
+    for site in eachindex(sets)
+        copyto!(indices, pointers[site], sets[site], 1, length(sets[site]))
+    end
+    return SparseMatrixCSC(nfeatures, length(sets), pointers,
+        indices, ones(Float64, length(indices)))
+end
+
 # Full output already requires O(nsites^2) space. Sparse multiplication avoids
 # merging every branch set for every pair; selected-pair calls keep the merge
 # path and do not construct this matrix.
 function _community_shared_lengths(branches, lengths)
-    pointers = Vector{Int}(undef, length(branches) + 1)
-    pointers[1] = 1
-    for site in eachindex(branches)
-        pointers[site + 1] = pointers[site] + length(branches[site])
-    end
-    indices = Vector{Int}(undef, last(pointers) - 1)
-    for site in eachindex(branches)
-        copyto!(indices, pointers[site], branches[site], 1, length(branches[site]))
-    end
-    incidence = SparseMatrixCSC(length(lengths), length(branches), pointers,
-        indices, ones(Float64, length(indices)))
+    incidence = _community_incidence(branches, length(lengths))
     weighted = copy(incidence)
     for k in eachindex(nonzeros(weighted))
         nonzeros(weighted)[k] = lengths[rowvals(weighted)[k]]
@@ -240,7 +245,8 @@ struct PhylobetaResult{T<:AbstractArray{Float64}}
 end
 
 @inline function _community_beta_components(a, b, c, family::Symbol)
-    # Turnover only depends on shared length and the smaller unique length.
+    # Inputs are shared/unique species counts or branch lengths.
+    # Turnover only depends on the shared amount and the smaller unique amount.
     # Scale these independently: a large other unique length can otherwise
     # underflow both to zero and turn a defined turnover into NaN.
     m = min(b, c)
@@ -307,15 +313,27 @@ end
 
 function _phylobeta(branches, lengths, index_family, selected)
     n = length(branches)
+    if selected === nothing && n >= 128
+        shared = _community_shared_lengths(branches, lengths)
+        pd_values = diag(shared)
+        return _community_beta(n, index_family, selected; total = shared) do i, j
+            _community_components_from_shared(branches, lengths, shared[i, j], pd_values, i, j)
+        end
+    end
+    return _community_beta(n, index_family, selected) do i, j
+        _community_branch_components(branches[i], branches[j], lengths)
+    end
+end
+
+# Both beta families use the same output layout and pair ordering. The callback
+# supplies shared/unique counts or lengths; a full shared matrix can be reused
+# for total dissimilarity after its components have been read.
+function _community_beta(components, n, index_family, selected; total = nothing)
     if selected === nothing
-        shared = n >= 128 ? _community_shared_lengths(branches, lengths) : nothing
-        total = shared === nothing ? Matrix{Float64}(undef, n, n) : shared
+        total = total === nothing ? Matrix{Float64}(undef, n, n) : total
         turnover, nestedness = (Matrix{Float64}(undef, n, n) for _ in 1:2)
-        pd_values = shared === nothing ? Float64[] : diag(shared)
         for i in 1:n, j in 1:i
-            a, b, c = shared === nothing ?
-                _community_branch_components(branches[i], branches[j], lengths) :
-                _community_components_from_shared(branches, lengths, shared[i, j], pd_values, i, j)
+            a, b, c = components(i, j)
             t, v, u = _community_beta_components(a, b, c, index_family)
             total[i, j] = total[j, i] = t
             turnover[i, j] = turnover[j, i] = v
@@ -324,7 +342,7 @@ function _phylobeta(branches, lengths, index_family, selected)
     else
         total, turnover, nestedness = (Vector{Float64}(undef, length(selected)) for _ in 1:3)
         for (k, (i, j)) in enumerate(selected)
-            a, b, c = _community_branch_components(branches[i], branches[j], lengths)
+            a, b, c = components(i, j)
             total[k], turnover[k], nestedness[k] = _community_beta_components(a, b, c, index_family)
         end
     end

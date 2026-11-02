@@ -66,6 +66,70 @@ tree results easier to compare across tools and runtimes.
 
 ## Community Metrics
 
+`CommunityData` keeps community values and row/species labels together. It
+accepts a matrix, a long `DataFrame`, or indexed `(rows, cols, values)` vectors.
+Matrix inputs are copied and retain dense/CSC storage and numeric type;
+`storage=:sparse` requests CSC storage. Long tables and triplets build sparse
+matrices directly, including when the input is too large for a dense table.
+
+```julia
+using DataFrames
+
+records = DataFrame(
+    sample = ["s1", "s1", "s2", "empty"],
+    species = ["A", "C", "A", "A"],
+    value = [2, 1, 3, 0],
+)
+data = CommunityData(records; sample=:sample, species=:species, value=:value)
+data.matrix
+data.sample_labels   # ["s1", "s2", "empty"]
+data.species_labels  # ["A", "C"]
+
+weighted_endemism(data).we
+beta_diss(data; pairs=[(1, 2)])
+phylo_endemism(data, tree).pe
+
+# Align once to the complete tree, or also cache branch sets and occupancy.
+aligned = align_community(data, tree)
+ctx = prepare_community(aligned, tree)
+pd(ctx).pd
+```
+
+Labels default to first-occurrence order for long tables. Explicit
+`sample_labels` and `species_labels` set a complete output order and can retain
+empty sites or unobserved species. String and integer identifiers are accepted;
+integers become strings. Labels must be unique and nonempty. Matrix labels
+default to `sample_1`, ... and `species_1`, ...; supply actual species names for
+tree-based analysis. Record values must be finite, non-negative real numbers
+without missing values. `value=nothing` counts occurrences instead of reading
+an abundance column.
+
+Duplicate records sum by default; `duplicates=:error` rejects them, including
+zero-valued duplicates. Overflowing sums fail. Values retain their abundance
+magnitudes; presence-based metrics use every positive value as presence.
+For example, indexed triplets can be constructed as:
+
+```julia
+data = CommunityData([1, 1, 2], [1, 2, 1], [2, 1, 3];
+    sample_labels=["s1", "s2"], species_labels=["A", "C"])
+```
+
+Tree-based calls align species by name, fill unrepresented tree species with
+zero columns, and preserve the complete tree and its root. Unknown input
+species always cause an error. `align_community(data, tree; missing_tips=:error)`
+also rejects missing tree species. Alignment preserves dense/CSC storage;
+aligning once lets subsequent calls reuse the aligned matrix. Prepared contexts
+add branch and occupancy reuse. Treat `CommunityData` arrays as read-only;
+constructors, explicit alignment, metric results, and contexts own their arrays.
+
+All existing matrix-based community metrics and `prepare_community` accept
+`CommunityData`. Results keep input row order; existing labeled result types
+receive its site labels. Set labels at construction instead of supplying
+`tip_labels` or `sample_labels` to metric calls. SES uses sparse species sets
+for observations and null draws, including abundance-weighted MPD/MNTD. Several
+other legacy metrics still require dense internal workspaces. Existing direct
+matrix calls remain available:
+
 ```julia
 community = [
     1 0 1
@@ -109,6 +173,27 @@ community query does not require scanning every edge of a large source tree.
 Null means and standard deviations are accumulated with Welford's online
 algorithm.
 
+`ses_pd`, `ses_mpd`, and `ses_mntd` keep only one null replicate and reusable
+species/tree workspaces, with no dense site-by-species randomization buffers.
+Supported null models are `:taxa_labels`, `:richness`, `:frequency`,
+`:sample_pool`, `:phylogeny_pool`, `:trialswap`, and `:independentswap`.
+The storage refactor retains their existing draw rules and permutation-based
+RNG consumption: richness preserves row sums, frequency preserves column sums,
+and swaps preserve both. The existing `:sample_pool` path uses the same full
+tree species pool as `:richness`; `:phylogeny_pool` additionally shuffles labels.
+Abundance-weighted MPD/MNTD randomize presence while keeping original abundances
+at their tip positions. Zero-weight null tips remain MNTD neighbor candidates.
+
+All three SES methods use finite draws for null means and sample SD. No finite
+draws give `NaN` mean/SD/z; a single finite draw gives a mean and `NaN` SD/z;
+zero null SD gives `NaN` z. Rank p-values retain the existing convention
+`(1 + count_below + half_ties) / (runs + 1)`; nonfinite draws contribute no rank
+increment. PD null draws now use a fresh branch-visit generation each time,
+fixing skipped branches between repeats. Without the root, PD sums below the
+MRCA directly and avoids subtracting a potentially long shared root path.
+SES virtual edges also fall back to summing original branches when depth
+subtraction would lose short distances beneath a long shared path.
+
 For Caper-compatible ED handling on polytomies, use
 `evol_distinct(tree; type = :fair_proportion,
 polytomy_correction = :isaac)`. The other supported modes are `:mooers` and
@@ -118,10 +203,11 @@ polytomy_correction = :isaac)`. The other supported modes are `:mooers` and
 
 These functions accept dense matrices or `SparseMatrixCSC` inputs. Rows are
 sites, columns are species, and every positive value denotes presence. Values
-must be finite and non-negative. For tree-based functions, supply one column
+must be finite and non-negative. For direct matrix calls to tree-based functions, supply one column
 per tree tip, including zero columns
 for species absent from the collection. Use `tip_labels` when the column order
-differs from `tree.tip_labels`.
+differs from `tree.tip_labels`. `CommunityData` calls perform this alignment
+and zero padding automatically.
 
 ```julia
 using SparseArrays
@@ -138,6 +224,13 @@ strict_pe.pe
 rpd.rpd
 rpd.pd_normalized
 rpd.pd_equal_normalized
+
+# Taxonomic beta uses species counts and does not require a tree.
+tax_beta = beta_diss(comm; index_family = :sorensen)
+tax_beta.total
+tax_beta.turnover
+tax_beta.nestedness
+tax_selected = beta_diss(comm; index_family = :jaccard, pairs = [(1, 2)])
 
 beta = phylobeta(comm, tree; index_family = :sorensen)
 beta.total
@@ -161,14 +254,22 @@ normalized to total length one before calculating the ratio. All tree-based
 metrics in this section include paths to the supplied root; the input tree is
 preserved. RPD returns `NaN` for zero denominators.
 
-`phylobeta` supports Sørensen and Jaccard decomposition. Its `total`, `turnover`
+`beta_diss` returns a `BetaDissResult` partitioning taxonomic beta diversity
+using shared and unique species counts. It requires no tree and ignores
+abundance magnitudes. `phylobeta` uses shared and unique branch lengths.
+Both support Sørensen and Jaccard decomposition. Their `total`, `turnover`
 and `nestedness` fields are symmetric matrices, or vectors in the supplied pair
 order when `pairs` is used. For defined results, total equals turnover plus
-nestedness. Comparing a zero-PD site with a positive-PD site gives total one
+nestedness. Pair requests retain repeated, reversed, and self pairs.
+
+For `beta_diss`, comparing an empty and a nonempty site gives total one and
+`NaN` turnover/nestedness. Two empty sites give `NaN` for all components,
+including the diagonal; nonempty diagonal entries are zero. For `phylobeta`,
+comparing a zero-PD site with a positive-PD site gives total one
 and undefined (`NaN`) turnover/nestedness; two zero-PD sites give `NaN` for all
 three components. Positive-PD diagonal entries are zero.
 
-`weighted_endemism`, `phylo_endemism`, `relative_pd`, and `phylobeta` accept
+`weighted_endemism`, `phylo_endemism`, `relative_pd`, `beta_diss`, and `phylobeta` accept
 `sample_labels` and retain row order. Results include richness or occupancy
 diagnostics where applicable. `pd`, `unifrac`, and `phylosor` also use sparse
 presence processing without constructing dense community inputs. WE, PE and PD
@@ -514,7 +615,8 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
   `turnover`, `nestedness`, `index_family`, and `pairs`.
 - `ses_pd`, `ses_mpd`, and `ses_mntd` return typed results containing observed
   values, null means/SDs, z scores, rank p-values, run count, and null model.
-  Empty or singleton MPD/MNTD observations are `NaN`.
+  Empty communities have `NaN` MPD/MNTD. Singleton observations are `NaN`,
+  except abundance-weighted MPD with positive mass, which is zero.
 - `psv` returns `PSVResult` with `psv`, `richness`, `variance`, and `scale_vcv`.
   Communities with fewer than two taxa have `NaN` PSV and variance. `psr`,
   `pse`, `psc`, and `psd` return named tuples whose field names are the metric

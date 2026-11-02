@@ -68,8 +68,12 @@ export RelativePDResult
 export relative_pd
 export PhylobetaResult
 export phylobeta
+export BetaDissResult
+export beta_diss
 export CommunityContext
 export prepare_community
+export CommunityData
+export align_community
 export ses_pd
 export ses_pd_dataframe
 export ses_mpd
@@ -140,15 +144,19 @@ include("traits/signal_k.jl")
 include("traits/pic.jl")
 
 include("community/input.jl")
+include("community/branches.jl")
 include("community/null_models.jl")
 include("community/pd.jl")
 include("community/endemism.jl")
 include("community/mpd.jl")
 include("community/mntd.jl")
 include("community/beta.jl")
+include("community/taxonomic_beta.jl")
 include("community/context.jl")
 include("community/diversity.jl")
+include("community/data_metrics.jl")
 include("community/nri_nti.jl")
+include("community/ses.jl")
 include("community/nri_nti_table.jl")
 include("community/edge2.jl")
 

@@ -5,6 +5,9 @@ using Random
 
 include("community_sparse.jl")
 include("community_context.jl")
+include("taxonomic_beta.jl")
+include("community_input.jl")
+include("ses_sparse.jl")
 
 @testset "Tree file I/O" begin
     mktempdir() do dir
