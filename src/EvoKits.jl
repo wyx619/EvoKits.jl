@@ -57,6 +57,7 @@ export EvolutionaryDistinctivenessResult
 export evol_distinct
 export evol_distinct_dataframe
 export make_ultrametric
+export timeslice
 export multi2di
 export keep_tip
 export drop_tip
@@ -151,6 +152,7 @@ include("tree/pruning.jl")
 include("tree/mapping.jl")
 include("tree/transforms.jl")
 include("tree/multi2di.jl")
+include("tree/timeslice.jl")
 include("tree/metrics.jl")
 include("tree/shape.jl")
 

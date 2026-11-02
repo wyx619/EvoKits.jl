@@ -266,6 +266,32 @@ end
 
 物种按名称精确匹配，未出现树物种贡献零值，完整树的全部组列保留；任何未知物种均报错，包括零列。不因物种缺失而稠密补零，也不转成长表或构造稠密分组矩阵。输入不修改，结果数组独立；可复用分组的内部数组应只读。聚合列已是谱系组，可接 `beta_diss`；原物种树不能直接当作这些组的树使用。本操作也不同于截短枝长的树时间切片。
 
+## 树枝长时间切片
+
+`timeslice(tree, depth; collapse=false)` 从定年等时树中移除距今 `depth` 时间内的枝长，返回新的 `CompactTree`，保留全部物种及原列序。旧分支保持原长，跨截面的分支截短，起点恰好位于截面或更年轻的分支置零。depth 使用树枝长单位，合法范围为零至树高；零保持枝长，树高使全部分支归零。
+
+```julia
+mktempdir() do dir
+    path = joinpath(dir, "tree.nwk")
+    write_tree(path, "(((A:1,B:1):1,C:2):2,(D:2,E:2):2);")
+    tree = read_tree(path)
+    data = CommunityData(sparse([1 1 0 0 0; 0 0 1 0 0; 0 0 0 1 1]);
+        species_labels = tree.tip_labels)
+    profiles = map((0.0, 1.0, 2.0)) do depth
+        sliced = timeslice(tree, depth; collapse = true)
+        ctx = prepare_community(data, sliced)
+        (; depth, pe = phylo_endemism(ctx).pe,
+            regions = phyloregion(phylobeta(ctx); k = 2))
+    end
+end
+```
+
+默认保留拓扑、节点编号、边序及标签，并重建根距离缓存。`collapse=true` 折叠所有恰为零的内部边（包括原有零边），保留根及全部 tip，重新编号；被折叠节点的标签随节点移除。任何正枝长都保留。含根路径的 PD、PE 和按枝长计算的 beta 在折叠前后保持一致；边序诊断与拓扑统计可能变化。
+
+验证沿用 `get_clades` 的 `atol=0.0`、`rtol=1e-8` 与最长后代路径年龄。容差内近似等时树按各父节点的局部年龄切片；容差不移动截面，也不决定折叠边。时间与额外空间为 O(节点数+物种数)，输入不修改。
+
+比较多个绝对时间深度时，各次都从原树切片，并为每棵切片树重新准备群落上下文。切到树高时，所有 PD/PE 为零，beta 为 NaN，因此该端点不能直接用于分区。
+
 ## 基于 beta 多样性的生物地理分区
 
 `phyloregion` 接收完整距离矩阵，默认使用 UPGMA（平均连接）层次聚类，按显式指定的 `k` 划分区域。也可直接接收完整的 `BetaDissResult`、`PhylobetaResult`，保留群落标签；`component` 可选 `:total`（默认）、`:turnover`、`:nestedness`。

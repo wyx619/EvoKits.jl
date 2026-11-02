@@ -438,6 +438,47 @@ are lineage identifiers: pass the collapsed community to `beta_diss`; the
 original species tree cannot be used as a tree of these groups. This operation
 does not truncate branch lengths as a tree time-slicing operation would.
 
+## Tree branch time slices
+
+`timeslice(tree, depth; collapse=false)` removes the most recent `depth`
+units of branch history from a dated ultrametric tree. It returns a new
+`CompactTree`, retaining all species in their original column order.
+Older branches retain their lengths, crossing branches are shortened, and
+branches starting at or younger than the cut become zero, including at exact
+node boundaries. Depth must be between zero and the tree height, inclusive;
+zero preserves lengths and the full height makes every edge zero.
+
+```julia
+mktempdir() do dir
+    path = joinpath(dir, "tree.nwk")
+    write_tree(path, "(((A:1,B:1):1,C:2):2,(D:2,E:2):2);")
+    tree = read_tree(path)
+    data = CommunityData(sparse([1 1 0 0 0; 0 0 1 0 0; 0 0 0 1 1]);
+        species_labels = tree.tip_labels)
+    profiles = map((0.0, 1.0, 2.0)) do depth
+        sliced = timeslice(tree, depth; collapse = true)
+        ctx = prepare_community(data, sliced)
+        (; depth, pe = phylo_endemism(ctx).pe,
+            regions = phyloregion(phylobeta(ctx); k = 2))
+    end
+end
+```
+
+By default topology, node IDs, edge order and labels are retained, with root
+distances rebuilt. `collapse=true` contracts exactly zero internal edges,
+including pre-existing ones, while retaining the root and every tip. IDs are
+then rebuilt and labels on removed nodes disappear. Positive edges are kept
+regardless of size. Rooted PD/PE and length-based beta agree before and after
+collapse; edge-indexed diagnostics and topology-based statistics may change.
+
+Validation uses the same `atol=0.0`, `rtol=1e-8` and longest descendant ages as
+`get_clades`. For accepted near-ultrametric trees, cuts use these local parent
+ages; tolerances do not move the cut or collapse small positive edges. The
+operation takes O(nodes+tips) time/storage and never changes its input.
+Use the original tree for each absolute depth and prepare a new community
+context per sliced tree. At full height all PD/PE values are zero and beta is
+undefined (`NaN`), so that endpoint cannot be passed directly to regionalization.
+
 ## Regionalization from beta diversity
 
 `phyloregion` clusters a complete distance matrix and cuts the full hierarchy

@@ -11,6 +11,12 @@ normal package use. Ordinary Julia tests read the TSV files without starting R.
   local `collapse_range.R`; richness/abundance from the sparse multiplication
   core of `counts.R`. Output values are repeated per input tip to keep the
   original species columns explicit.
+- `timeslice_r.tsv`: 120 input/output trees from local `time_slice.R`, for
+  15 trees, four depths (zero and three interior cuts), and both collapse modes.
+  The original rounded inputs are explicitly made ultrametric in the generator
+  and saved with 17 digits. This isolates shared cut semantics from differences
+  in how near-ultrametric ages are defined. Exact node/root boundaries, tiny
+  positive edges and long stems are tested independently in Julia.
 
 Generated offline on 2026-11-02 with R 4.6.2, ape, phangorn and Matrix, using
 seed 20261106. No installation or network calls. Generator and session details
@@ -21,3 +27,9 @@ R comparisons cover shared semantics. Julia separately tests the root and
 all-zero boundaries, explicit younger-side cuts, full-tree alignment and
 preservation of empty sites/groups. R's pruning, automatic name changes,
 fixed k epsilon and long-table conversion are not adopted.
+
+Time-slice fixtures use the ignored offline generator
+`validation/community/timeslice_reference.R`, with environment details in
+`results/timeslice_r_session.txt`. R's exact-cut strict-inequality bug and
+`di2multi` default positive-edge tolerance are not adopted: Julia clears all
+branches starting on the cut and contracts only exactly zero internal edges.
