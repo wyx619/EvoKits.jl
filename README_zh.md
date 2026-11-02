@@ -230,6 +230,76 @@ beta_diss(grouped) # 分组后的 CommunityData 可直接用于分类指标
 
 `aggregate_species` 返回新的 `CommunityData`，CSC 列对应物种组。默认统计每组存在的物种数；`abundance_weighted=true` 汇总丰度并保留数值类型（Bool 转 Int）。`normalize=true` 返回各群落保留分组的 Float64 比例，空行仍为零。组名使用字符串或整数，默认按输入物种列首次出现的组排序，包含已映射零列对应的组；`group_labels` 可固定完整顺序并保留额外空组。性状表列由 `species`/`trait` 选择，分组表列由 `species`/`group` 选择。输入不会被修改，CSC 输入不展开为稠密群落矩阵或长出现记录。分组由调用者提供，物种聚类与地理绘图分别处理。
 
+## 基于 beta 多样性的生物地理分区
+
+`phyloregion` 接收完整距离矩阵，默认使用 UPGMA（平均连接）层次聚类，按显式指定的 `k` 划分区域。也可直接接收完整的 `BetaDissResult`、`PhylobetaResult`，保留群落标签；`component` 可选 `:total`（默认）、`:turnover`、`:nestedness`。
+
+```julia
+regional_data = CommunityData(sparse([1 1 0 0; 1 1 1 0; 0 0 1 1; 0 1 1 1]);
+    species_labels = ["A", "B", "C", "D"],
+    sample_labels = ["west_1", "west_2", "east_1", "east_2"])
+regions = phyloregion(beta_diss(regional_data); k = 2)
+regions.membership       # 原始群落行序，区域编号从 1 开始
+regions.cluster_sizes
+regions.region_distances
+regions.distinctiveness
+
+# 也可直接传完整距离矩阵及标签。
+regions = phyloregion([0 1 8 10; 1 0 6 12; 8 6 0 2; 10 12 2 0];
+    k = 2, sample_labels = ["A", "B", "C", "D"])
+# membership = [1, 1, 2, 2]；region_distances = [0 9; 9 0]
+```
+
+结果 `PhyloregionResult` 包含群落标签及归属 `membership`、分区大小 `cluster_sizes`、区域间差异 `region_distances`、区域独特性 `distinctiveness`，以及完整聚类树 `merge`、`heights` 和选项 `k`、`method`、来源 `component`。区域按其首个输入群落的顺序编号。`merge` 负数表示原始输入行号，正数表示先前合并行号。区域间差异为两区域全部跨群落对的平均距离，对角线设零；区域独特性为它与其他区域平均差异的均值，每个区域权重相同，不按群落数加权。`k=1` 时独特性为 `NaN`。
+
+距离输入必须非空、方形、严格对称、有限、非负且对角线为零，不要求欧氏距离。转换为 Float64 后须保持有限正距离。任何未定义值都报错，包括空群落造成的 NaN 对角线；需要调用者先显式选择定义有效的子集及其标签，不会自动删除群落或填补距离。指定群落对的 beta 结果不能替代完整距离输入。
+
+支持以下 8 种方法，递推语义对齐 R `hclust`：
+
+| `method` | 含义 |
+|---|---|
+| `:average` | UPGMA，全部跨群落距离的平均值 |
+| `:single` | 单连接，最小跨群落距离 |
+| `:complete` | 完全连接，最大跨群落距离 |
+| `:mcquitty` | WPGMA，两个子簇等权更新 |
+| `:ward_D` | R 旧版 Ward，直接递推输入距离 |
+| `:ward_D2` | 平方距离上的 Ward 递推，输出平方根高度 |
+| `:centroid` | UPGMC，在输入数值上应用质心递推 |
+| `:median` | WPGMC，在输入数值上应用中位连接递推 |
+
+`Symbol("ward.D")`、`Symbol("ward.D2")` 是接受的别名，结果统一记录为 `:ward_D`、`:ward_D2`。Ward 的最小方差解释要求欧氏距离。质心/中位连接不自动将输入平方，允许合并高度下降，保留实际合并顺序。更新距离超出有限 Float64 范围时报错，需先缩放输入。
+
+六种单调方法使用 O(n²) 最近邻链，质心/中位连接使用全局最小值加行最近邻缓存，最坏时间 O(n³)。工作区均用 `n*(n-1)/2` 个 Float64 保存压缩三角；完整输入和区域输出仍需二次方内存。固定行序下的并列规则可重复：新链从最早活动簇开始，最近距离相同时优先前驱，否则取最早活动簇；同高度合并保留发现顺序。质心/中位连接选活动槽编号字典序最早的一对。并列选择可能与 R 不同，也可能随行重排变化。输入不修改，结果数组独立。
+
+### 复用聚类树及评估分区
+
+```julia
+ctx = prepare_phyloregion(beta_diss(regional_data); method = :average)
+cutree(ctx; k = 2)                  # 仅归属，O(n)，不重新聚类
+regions3 = phyloregion(ctx; k = 3)  # 复用树，另算区域统计
+cutree(regions3; k = 2)             # PhyloregionResult 也保留完整树
+
+selection = select_linkage(ctx)     # 默认比较 8 种方法
+selection.methods
+selection.correlations             # 原距离与树上合并距离的 Pearson 相关
+selection.best_method              # 首个有限最高分方法，或 nothing
+
+evaluation = optimal_phyloregion(ctx; k = 4) # 评估 1 到 4 的全部切分
+evaluation.df                      # k、ev、totwss、totbss、tss
+evaluation.optimal_k                # 建议分区数，或 nothing
+evaluation.reason
+```
+
+`PhyloregionContext` 保存原始距离的压缩快照、标签和完整聚类树，修改原输入不影响快照；上下文内部数组应只读。准备时保留一份压缩三角，另用一份临时三角聚类。重复 `cutree` 只切树；`phyloregion(ctx; k)` 仍会遍历群落对计算区域均值，并分配 k×k 区域矩阵。
+
+`select_linkage` 也可接完整距离矩阵或 beta 结果，可用 `methods=(:average,:complete,:single)` 限定方法。它比较原距离与各群落对首次合并高度的相关性，分数越大表示距离保留越好，不代表生态解释必然正确。常量距离/高度和仅一个群落对的相关性为 NaN；全部未定义时 `best_method=nothing`。不构建完整 cophenetic 矩阵；上下文输入对相同方法复用已有树。
+
+`optimal_phyloregion` 也可接完整距离矩阵或 beta 结果，只构建一次树；`k` 是评估上限，默认 `min(n,20)`。簇内 WSS 为该簇无序群落对的距离平方和除以群落数，TSS 对全体群落计算，BSS=TSS−WSS，`ev=BSS/TSS`。对非欧氏差异，这些是距离评分，EV 可能不单调或超出 [0,1]。
+
+建议 k 遵循本地 phyloregion 的阈值规则：先按降序尝试 `ev_thresholds=(0.95,0.9,0.8,0.75,0.67,0.5,0.33)`，再按升序尝试 `inc_thresholds=(0.01,0.05,0.1)`。分别找首个达到解释率阈值的 k、首个下一步增量足够小的 k，对首个成功阈值组合推荐两者较大值；容差为 `10^(-precision)`，默认 precision=3，评估末端 k 无下一步增量。这是阈值启发式。阈值不满足或全零离差时返回 `optimal_k=nothing` 及完整表，`reason` 分别为 `:thresholds_not_met`、`:zero_dispersion`。平方和按原始距离平方单位输出，可能溢出/下溢；EV 和判断使用归一化距离避免该溢出。全部评分只遍历每个群落对一次，额外存储 O(n)。
+
+本轮不新增依赖；NMDS、地理约束、空间多边形和绘图尚未实现。
+
 ## NRI 和 NTI
 
 对于单个观测群落及其本地物种池，使用 `nri_nti`：

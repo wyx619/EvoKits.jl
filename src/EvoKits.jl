@@ -77,6 +77,15 @@ export align_community
 export CommunityTraitResult
 export map_trait
 export aggregate_species
+export PhyloregionResult
+export phyloregion
+export PhyloregionContext
+export prepare_phyloregion
+export cutree
+export LinkageSelectionResult
+export select_linkage
+export OptimalPhyloregionResult
+export optimal_phyloregion
 export ses_pd
 export ses_pd_dataframe
 export ses_mpd
@@ -159,6 +168,9 @@ include("community/context.jl")
 include("community/diversity.jl")
 include("community/data_metrics.jl")
 include("community/aggregation.jl")
+include("community/regionalization.jl")
+include("community/regionalization_context.jl")
+include("community/regionalization_selection.jl")
 include("community/nri_nti.jl")
 include("community/ses.jl")
 include("community/nri_nti_table.jl")

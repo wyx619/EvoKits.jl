@@ -9,6 +9,8 @@ include("taxonomic_beta.jl")
 include("community_input.jl")
 include("ses_sparse.jl")
 include("community_aggregation.jl")
+include("community_regionalization.jl")
+include("regionalization_linkage.jl")
 
 @testset "Tree file I/O" begin
     mktempdir() do dir

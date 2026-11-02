@@ -365,6 +365,129 @@ Inputs are not mutated, and CSC input is never expanded into a dense community
 or a long occurrence table. Groups must be supplied; clustering and geographic
 mapping are separate operations.
 
+## Regionalization from beta diversity
+
+`phyloregion` clusters a complete distance matrix and cuts the full hierarchy
+into an explicit number of regions `k`, using UPGMA by default. It also
+accepts full `BetaDissResult` and `PhylobetaResult` objects, retaining site labels.
+Select `component=:total` (default), `:turnover`, or `:nestedness`.
+
+```julia
+regional_data = CommunityData(sparse([1 1 0 0; 1 1 1 0; 0 0 1 1; 0 1 1 1]);
+    species_labels = ["A", "B", "C", "D"],
+    sample_labels = ["west_1", "west_2", "east_1", "east_2"])
+regions = phyloregion(beta_diss(regional_data); k = 2)
+regions.membership       # input-row order; region IDs start at 1
+regions.cluster_sizes
+regions.region_distances
+regions.distinctiveness
+
+# Or supply a complete distance matrix and its labels.
+regions = phyloregion([0 1 8 10; 1 0 6 12; 8 6 0 2; 10 12 2 0];
+    k = 2, sample_labels = ["A", "B", "C", "D"])
+# membership = [1, 1, 2, 2]; region_distances = [0 9; 9 0]
+```
+
+`PhyloregionResult` returns site `sample_labels` and `membership`,
+`cluster_sizes`, `region_distances`, `distinctiveness`, and the complete
+hierarchy (`merge` and `heights`), along with `k`, `method`, and source
+`component`. Regions are numbered by their first input site. Negative merge
+entries identify input rows; positive entries identify earlier merge rows.
+Region distances average all cross-site pairs between two regions and have
+zero diagonals. Distinctiveness averages distances to the other regions with
+equal region weight, regardless of region size; it is NaN for k=1.
+
+Input must be nonempty, square, exactly symmetric, finite, non-negative, with
+zero diagonal; it need not be Euclidean. Float64 conversion must preserve
+finite positive distances. Undefined values, including NaN diagonals from
+empty sites, are rejected; explicitly select a defined subset and its labels
+before calling. No sites are automatically removed or distances imputed.
+Selected-pair beta results cannot supply the complete distances needed here.
+
+Supported methods follow R `hclust` recurrences:
+
+| `method` | Meaning |
+|---|---|
+| `:average` | UPGMA; average of all cross-site distances |
+| `:single` | Minimum cross-site distance |
+| `:complete` | Maximum cross-site distance |
+| `:mcquitty` | WPGMA; equal weight for the two child clusters |
+| `:ward_D` | R's older Ward recurrence on supplied distances |
+| `:ward_D2` | Ward recurrence on squared distances, square-root heights |
+| `:centroid` | UPGMC recurrence on supplied distances |
+| `:median` | WPGMC recurrence on supplied distances |
+
+`Symbol("ward.D")` and `Symbol("ward.D2")` are accepted aliases; results use
+`:ward_D` and `:ward_D2`. Ward's variance interpretation requires Euclidean
+distances. Centroid/median do not automatically square the input; their heights
+can decrease and remain in chronological merge order. A linkage update outside
+finite Float64 range is an error; rescale input distances in that case.
+
+The six monotone methods use O(n²) nearest-neighbor chaining. Centroid/median
+use global minima with cached row minima, with O(n³) worst-case time. Both use
+a packed Float64 work triangle of `n*(n-1)/2` entries. The full input and
+regional output still require quadratic memory. Ties are deterministic for
+fixed row order: chains start at the earliest active cluster, retain the
+predecessor on equal nearest distances, otherwise choose the earliest active
+cluster; equal-height discoveries keep their order. Centroid/median choose the
+lexicographically first active pair. Ties can differ from R `hclust` and depend
+on row order. Inputs are not mutated; outputs own their arrays.
+
+### Reuse a hierarchy and evaluate cuts
+
+```julia
+ctx = prepare_phyloregion(beta_diss(regional_data); method = :average)
+cutree(ctx; k = 2)                 # memberships only; O(n), no reclustering
+regions3 = phyloregion(ctx; k = 3) # regional summaries, reusing the same tree
+cutree(regions3; k = 2)            # any PhyloregionResult retains the full tree
+
+selection = select_linkage(ctx)    # compare all eight methods
+selection.methods
+selection.correlations            # original vs cophenetic Pearson correlation
+selection.best_method             # first finite maximum, or nothing
+
+evaluation = optimal_phyloregion(ctx; k = 4) # evaluate every cut from 1 to 4
+evaluation.df                     # columns: k, ev, totwss, totbss, tss
+evaluation.optimal_k               # suggested k, or nothing
+evaluation.reason
+```
+
+`PhyloregionContext` owns an original packed distance snapshot and full tree;
+input changes do not affect it. Treat context arrays as read-only. Preparation
+retains one packed triangle and uses a second as temporary clustering
+workspace. Repeated `cutree` calls only cut the tree; `phyloregion(ctx; k)` also
+visits site pairs for regional means and allocates the k×k regional matrix.
+
+`select_linkage` also accepts a distance matrix or full beta result. Restrict
+methods with, for example, `methods=(:average, :complete, :single)`. It compares
+original distances with the height where each pair first joins the tree.
+Larger correlation means better distance preservation, not ecological
+correctness. Constant distances/heights and a single pair give NaN; if all
+scores are undefined, `best_method` is `nothing`. No full cophenetic matrix is
+allocated. With a context, its existing tree is reused for the matching method.
+
+`optimal_phyloregion` also accepts a distance matrix or full beta result,
+building one hierarchy. `k` is the upper bound, defaulting to `min(n,20)`.
+Within-cluster sums are the sum of squared unordered distances divided by the
+cluster's site count; TSS uses all sites, BSS=TSS−WSS, and `ev=BSS/TSS`.
+For non-Euclidean dissimilarities these are distance-based scores; EV may be
+nonmonotone or outside [0,1].
+
+Selection follows the saved phyloregion threshold heuristic: try
+`ev_thresholds=(0.95,0.9,0.8,0.75,0.67,0.5,0.33)` descending, then
+`inc_thresholds=(0.01,0.05,0.1)` ascending. Find the first k meeting each EV
+threshold and the first whose next EV increment is small enough, and recommend
+their maximum for the first successful threshold combination. Tolerance is
+`10^(-precision)`, default precision=3; the last evaluated k has no next
+increment. This is a heuristic, not a curvature optimization. Unmet thresholds
+or zero dispersion return `optimal_k=nothing` and the full table, with
+`:thresholds_not_met` or `:zero_dispersion` as the reason. Sums use original
+squared-distance units and can overflow/underflow, while EV and decisions use
+normalized distances. Scores visit all pairs once with O(n) extra storage.
+
+These functions add no dependencies. NMDS, geographic constraints, spatial
+polygons and plotting are outside this numerical API.
+
 ## NRI and NTI
 
 For a single observed community and a local species pool, use `nri_nti`:
