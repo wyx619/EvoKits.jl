@@ -99,10 +99,6 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
 - `nmds` returns `NMDSResult` with labels, `points`, Kruskal `stress`, packed
   input/score/fitted distances, the best start's history and stopping reason,
   and per-start stress, iteration and convergence diagnostics.
-- `infomap` returns `InfomapResult` with site `sample_labels`, `membership`,
-  `cluster_sizes`, `k`, full-network `codelength`, weights, trials, seed,
-  regularization settings and `igraph_version`. Regularization is enabled by
-  default. See [network regionalization](regionalization.md#infomap-on-sitespecies-networks).
 - `ses_pd`, `ses_mpd`, and `ses_mntd` return typed results containing observed
   values, null means/SDs, z scores, rank p-values, run count, and null model.
   Empty communities have `NaN` MPD/MNTD. Singleton observations are `NaN`,
