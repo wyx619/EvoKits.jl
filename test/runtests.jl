@@ -16,6 +16,7 @@ include("timeslice.jl")
 include("functional_beta.jl")
 include("mean_dist.jl")
 include("beta_ses.jl")
+include("nmds.jl")
 
 @testset "Tree file I/O" begin
     mktempdir() do dir

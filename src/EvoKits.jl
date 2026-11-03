@@ -100,6 +100,8 @@ export LinkageSelectionResult
 export select_linkage
 export OptimalPhyloregionResult
 export optimal_phyloregion
+export NMDSResult
+export nmds
 export ses_pd
 export ses_pd_dataframe
 export ses_mpd
@@ -190,6 +192,7 @@ include("community/regionalization.jl")
 include("community/regionalization_context.jl")
 include("community/regionalization_selection.jl")
 include("community/mean_dist.jl")
+include("community/nmds.jl")
 include("community/nri_nti.jl")
 include("community/ses.jl")
 include("community/beta_ses.jl")
