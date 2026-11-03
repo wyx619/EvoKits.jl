@@ -203,6 +203,42 @@ second_batch = phylobeta(ctx; index_family = :jaccard, pairs = [(2, 1)])
 
 原矩阵、树或标签后续发生变化时，上下文仍使用准备时的快照；分析新数据需要重新准备。可以独立修改返回结果；上下文内部数组应视为只读。准备过程会保留分支集合及汇总值，因此有一次性的时间和内存成本，适合同一数据的重复分析。上下文不保留原始树和矩阵，也不缓存完整群落间矩阵；完整矩阵调用仍执行两两计算并分配输出，指定群落对调用仅分配请求的结果。
 
+## 系统发育 beta SES
+
+`phylobeta_ses` 复用现有 SES 的稀疏随机化和在线统计，对一个系统发育 beta 成分计算标准化效应量。每次选择 `:sorensen` 或 `:jaccard`，以及 `:total`、`:turnover` 或 `:nestedness` 之一。
+
+```julia
+using Random
+
+effect = phylobeta_ses(comm, tree; index_family = :sorensen,
+    component = :turnover, null_model = :taxa_labels, runs = 999,
+    pairs = [(1, 2)], rng = MersenneTwister(42))
+effect.observed
+effect.null_mean
+effect.null_sd
+effect.z_score
+effect.p_value
+effect.valid_replicates
+```
+
+支持稠密/CSC 矩阵和 `CommunityData`，所有正丰度视为存在。完整树物种池始终参与抽样，包括未观测物种；`CommunityData` 按物种名对齐并补零，直接矩阵输入须保留每个树 tip 的列。
+
+| 零模型 | 随机化与约束 |
+| --- | --- |
+| `:taxa_labels`（别名 `:tipshuffle`） | 所有群落共用一次树 tip 标签置换，保留全部分类学群落对重叠数。 |
+| `:richness`、`:sample_pool` | 各群落独立从完整树物种池抽取原丰富度的物种。 |
+| `:phylogeny_pool` | 丰富度抽样后，再共用一次标签置换。 |
+| `:frequency` | 保持每个物种的群落占据数，随机分配其出现位置；群落丰富度可以变化。 |
+| `:trialswap`、`:independentswap` | 棋盘格交换同时保持行列和，每次重复从观测群落重新开始。 |
+
+交换次数由 `iterations` 和 `max_attempts_per_swap` 控制，有限交换不保证均匀抽样。对比不同成分时，每次新建相同种子的 RNG 并使用相同参数，即可使用相同随机样本。
+
+`PhylobetaSESResult` 包含上述六组数组、群落标签和丰富度、指定对及零模型参数。默认返回完整对称矩阵；`pairs` 返回按请求顺序排列的向量，保留重复、反向及自配对。每次仍随机化完整输入，仅构建指定端点的分支集合；在线统计不保留各次随机距离矩阵，指定对输出也不分配完整群落间矩阵。
+
+均值和样本 SD 只使用有限随机值，`valid_replicates` 逐对记录次数。没有有效值时均值/SD/z/p 为 `NaN`；只有一个时 SD/z 为 `NaN`；常量零模型保留 SD=0、z=`NaN`。观测 beta 非有限时，即使有有限的零模型统计，z/p 仍为 `NaN`。空群落和零 PD 群落沿用 `phylobeta` 规则，包括未定义的对角线。
+
+下尾中秩分数为 `p = (1 + 小于观测值的次数 + 0.5 × 相等次数) / (有效次数 + 1)`，相等按计算值精确判定。它不是双尾 p 值；分母采用有效次数，旧的群落内 SES 仍保留 `runs + 1`。R 的 `rowwise`、`colwise` 标签重排会被对齐抵消，因此拒绝这两个模型；也不沿用 R 将零 SD 替换为一的做法。SES z 值可能为负或未定义，不宜作为 `phyloregion` 的距离输入。
+
 ## 群落性状与物种分组
 
 `map_trait` 按群落汇总一个数值性状，`aggregate_species` 按既定分组聚合物种。两者均接受稠密/CSC 矩阵或 `CommunityData`；性状和分组可用按物种列顺序的向量、按物种名索引的字典或 `DataFrame` 提供。按名称精确匹配，表格物种禁止重复。矩阵入口可指定 `species_labels` 和 `sample_labels`。
@@ -648,6 +684,7 @@ signal.k
 - `phylo_endemism` 返回 `PhyloEndemismResult`，包含 `sample_labels`、`pe`、`richness`、按树的边顺序排列的 `branch_occupancy` 和 `weighted`。
 - `relative_pd` 返回 `RelativePDResult`，包含 `sample_labels`、`rpd`、`pd_normalized`、`pd_equal_normalized`、`richness`、`total_branch_length` 和 `positive_branch_count`。
 - `phylobeta` 返回 `PhylobetaResult`，包含 `sample_labels`、`total`、`turnover`、`nestedness`、`index_family` 和 `pairs`。
+- `phylobeta_ses` 返回 `PhylobetaSESResult`，包含群落标签和丰富度、`observed`、`null_mean`、`null_sd`、`z_score`、`p_value`、`valid_replicates`、`pairs`、所选指数族/成分及零模型参数。
 - `ses_pd`、`ses_mpd` 和 `ses_mntd` 返回带类型的结果，包含观测值、零模型均值和标准差、z 分数、秩 p 值、运行次数和零模型。空群落的 MPD/MNTD 为 `NaN`；单物种群落也为 `NaN`，但正质量的丰度加权 MPD 为零。
 - `psv` 返回 `PSVResult`，包含 `psv`、`richness`、`variance` 和 `scale_vcv`；少于两个分类单元的群落的 PSV 和方差为 `NaN`。`psr`、`pse`、`psc` 和 `psd` 返回命名元组，其字段为相应函数文档中的指标名称。
 - `expected_pd` 和 `pd_variance` 返回 `ExpectedPDResult`；`richness` 为 `1:tree.ntips`，`expected_pd` 为解析期望值，`variance_pd` 为 `upper_bound` 选择的上界或精确 Picante 方差。
@@ -700,7 +737,7 @@ EvoKits 专注于可移植、以树为中心的工具：
 - Newick 读写和 `CompactTree` 转换。
 - 树修剪、超度量转换和多分叉解析。
 - 树身份标识及 R/ape 映射。
-- ED、PD、SES-PD、SES-MPD 和 SES-MNTD 指标。
+- ED、PD、SES-PD、SES-MPD、SES-MNTD 和系统发育 beta SES 指标。
 - Pagel's lambda 和性状对齐。
 - 二元性状系统发育信号的 Fritz-Purvis D。
 - EDGE2 得分和灭绝概率工具。

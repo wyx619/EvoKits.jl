@@ -1,6 +1,42 @@
 # SES shares one sparse null-model engine; only a single replicate is retained.
 # These workspaces scale with observed occurrences and tree size, not the
 # product of site and species counts.
+
+# Shared finite-draw Welford statistics for site and pairwise SES. Rank counts
+# start at one for the observed value; callers choose the documented p-value
+# denominator (historical runs+1 for site SES, finite count+1 for beta SES).
+struct _SESOnlineStats{N}
+    counts::Array{Int, N}
+    means::Array{Float64, N}
+    m2::Array{Float64, N}
+    ranks::Array{Float64, N}
+end
+
+_SESOnlineStats(shape::Tuple) = _SESOnlineStats(zeros(Int, shape),
+    zeros(Float64, shape), zeros(Float64, shape), ones(Float64, shape))
+
+@inline function _ses_online_update!(stats, i, observed, value)
+    isfinite(value) || return nothing
+    stats.counts[i] += 1
+    delta = value - stats.means[i]
+    stats.means[i] += delta / stats.counts[i]
+    stats.m2[i] += delta * (value - stats.means[i])
+    if isfinite(observed)
+        stats.ranks[i] += value < observed ? 1.0 : value == observed ? 0.5 : 0.0
+    end
+    return nothing
+end
+
+function _ses_online_finish!(stats, observed, indices = eachindex(observed))
+    sds, z = (fill(NaN, size(observed)) for _ in 1:2)
+    for i in indices
+        stats.counts[i] == 0 && (stats.means[i] = NaN)
+        sds[i] = stats.counts[i] > 1 ? sqrt(max(0.0, stats.m2[i] / (stats.counts[i] - 1))) : NaN
+        z[i] = isfinite(sds[i]) && sds[i] > 0 ? (observed[i] - stats.means[i]) / sds[i] : NaN
+    end
+    return (; means = stats.means, sds, z, ranks = stats.ranks, counts = stats.counts)
+end
+
 mutable struct _SesPDWorkspace
     edge_of_child::Vector{Int32}
     seen::Vector{Int}
@@ -149,28 +185,15 @@ function _ses_summary(metric, community, tree;
         _SesDistanceWorkspace(tree, abundance_weighted)
     obs, random = (Vector{Float64}(undef, length(observed)) for _ in 1:2)
     _ses_evaluate!(obs, metric, tree, observed, workspace, observed, weights)
-    counts = zeros(Int, length(obs))
-    means, m2 = (zeros(length(obs)) for _ in 1:2)
-    ranks = ones(length(obs))
+    stats = _SESOnlineStats(size(obs))
     for _ in 1:runs
         rows = _randomize_community!(null, observed, model, iterations, max_attempts_per_swap, rng)
         _ses_evaluate!(random, metric, tree, rows, workspace, observed, weights)
         for i in eachindex(random)
-            value = random[i]
-            isfinite(value) || continue
-            counts[i] += 1
-            delta = value - means[i]
-            means[i] += delta / counts[i]
-            m2[i] += delta * (value - means[i])
+            _ses_online_update!(stats, i, obs[i], random[i])
         end
-        _tools_update_rank!(ranks, obs, random)
     end
-    sds, z = (Vector{Float64}(undef, length(obs)) for _ in 1:2)
-    for i in eachindex(obs)
-        counts[i] == 0 && (means[i] = NaN)
-        sds[i] = counts[i] > 1 ? sqrt(max(0.0, m2[i] / (counts[i] - 1))) : NaN
-        z[i] = isfinite(sds[i]) && sds[i] > 0 ? (obs[i] - means[i]) / sds[i] : NaN
-    end
+    (; means, sds, ranks, z) = _ses_online_finish!(stats, obs)
     return (; labels, richness = null.richness, obs, means, sds, ranks, z,
         p = ranks ./ (runs + 1), model)
 end

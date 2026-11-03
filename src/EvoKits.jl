@@ -89,6 +89,8 @@ export FunctionalBetaResult
 export functional_beta
 export MeanDistResult
 export mean_dist
+export PhylobetaSESResult
+export phylobeta_ses
 export PhyloregionResult
 export phyloregion
 export PhyloregionContext
@@ -190,6 +192,7 @@ include("community/regionalization_selection.jl")
 include("community/mean_dist.jl")
 include("community/nri_nti.jl")
 include("community/ses.jl")
+include("community/beta_ses.jl")
 include("community/nri_nti_table.jl")
 include("community/edge2.jl")
 

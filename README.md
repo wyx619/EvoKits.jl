@@ -309,6 +309,66 @@ intended for reuse. It does not retain the input tree or matrix, or cache full
 pairwise matrices. Full matrix calls still perform pairwise calculations and
 allocate their outputs; selected-pair calls allocate only requested results.
 
+## Phylogenetic beta SES
+
+`phylobeta_ses` standardizes one phylogenetic beta component against a null
+model. It reuses the sparse randomization and online statistics of the site
+SES methods. Choose `:sorensen` or `:jaccard` and one of `:total`, `:turnover`,
+or `:nestedness` per call.
+
+```julia
+using Random
+
+effect = phylobeta_ses(comm, tree; index_family = :sorensen,
+    component = :turnover, null_model = :taxa_labels, runs = 999,
+    pairs = [(1, 2)], rng = MersenneTwister(42))
+effect.observed
+effect.null_mean
+effect.null_sd
+effect.z_score
+effect.p_value
+effect.valid_replicates
+```
+
+Dense/CSC matrices and `CommunityData` are accepted; positive abundances
+denote presence. The complete tree-tip pool remains eligible, including
+unobserved species. `CommunityData` aligns by species name and fills missing
+tree species with zeros; matrix inputs require a column for every tree tip.
+
+| Null model | Randomization and constraints |
+| --- | --- |
+| `:taxa_labels` (`:tipshuffle`) | One shared permutation of tree-tip labels; preserves all taxonomic pairwise overlaps. |
+| `:richness`, `:sample_pool` | Independently samples each site's richness from the complete tree-tip pool. |
+| `:phylogeny_pool` | Richness sampling followed by a shared label permutation. |
+| `:frequency` | Preserves each species' site occupancy while randomizing its sites; site richness can change. |
+| `:trialswap`, `:independentswap` | Checkerboard trials preserve both margins and restart from the observed community for each replicate. |
+
+Swap effort is controlled by `iterations` and `max_attempts_per_swap`; finite
+swap runs do not guarantee uniform sampling. Use fresh RNGs with the same
+seed and settings to compare components under identical draws.
+
+`PhylobetaSESResult` contains the six arrays shown above, site labels and
+richness, requested pairs, and null-model settings. Arrays are symmetric full
+matrices by default. `pairs` returns vectors in request order, retaining
+repeated, reversed, and self pairs. Every draw randomizes the complete input;
+only branch sets for requested endpoints are built. Replicate matrices are
+never retained, and selected-pair output avoids full site-by-site matrices.
+
+Means and sample SDs use only finite draws, counted per pair. No valid draw
+gives `NaN` mean/SD/z/p; one valid draw gives `NaN` SD/z. Constant nulls retain
+SD zero and yield `NaN` z. Nonfinite observed beta gives `NaN` z/p even when
+finite null summaries exist. Empty and zero-PD sites follow `phylobeta`,
+including undefined diagonals.
+
+The lower-tail mid-rank score is
+`p = (1 + count(null < observed) + 0.5count(null == observed)) / (valid + 1)`.
+Ties use exact computed values. This is not a two-sided p-value; its
+denominator uses valid draws, while older site SES retains `runs + 1`.
+R's `rowwise` and `colwise` label reorderings are undone by alignment, so
+these models are rejected. R's replacement of zero SD by one is not used.
+SES z scores can be negative or undefined and are unsuitable as distances
+for `phyloregion`.
+
 ## Community traits and species groups
 
 `map_trait` summarizes one numeric trait per site, and `aggregate_species`
@@ -1024,6 +1084,9 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
   and `positive_branch_count`.
 - `phylobeta` returns `PhylobetaResult` with `sample_labels`, `total`,
   `turnover`, `nestedness`, `index_family`, and `pairs`.
+- `phylobeta_ses` returns `PhylobetaSESResult` with site labels and richness,
+  `observed`, `null_mean`, `null_sd`, `z_score`, `p_value`,
+  `valid_replicates`, `pairs`, the selected family/component, and null settings.
 - `ses_pd`, `ses_mpd`, and `ses_mntd` return typed results containing observed
   values, null means/SDs, z scores, rank p-values, run count, and null model.
   Empty communities have `NaN` MPD/MNTD. Singleton observations are `NaN`,
@@ -1105,7 +1168,7 @@ EvoKits focuses on portable, tree-centered utilities:
 - Newick I/O and `CompactTree` conversion
 - Tree pruning, ultrametric conversion, and multifurcation resolution
 - Tree identity and R/ape mapping
-- ED, PD, SES-PD, SES-MPD, and SES-MNTD metrics
+- ED, PD, SES-PD, SES-MPD, SES-MNTD, and phylogenetic beta SES metrics
 - Pagel's lambda and trait alignment
 - Fritz-Purvis D for binary-trait phylogenetic signal
 - EDGE2 scores and extinction-probability utilities
