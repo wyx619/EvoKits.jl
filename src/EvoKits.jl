@@ -87,6 +87,19 @@ export functional_groups
 export collapse_traits
 export FunctionalBetaResult
 export functional_beta
+export FunctionalGroupSelectionResult
+export optimal_functional_groups
+export IndicatorSpeciesResult
+export indicators
+export ValueClassificationResult
+export classify_values
+export PhyloBuilderResult
+export phylobuilder
+export EDGEResult
+export edge
+export MetricSelectionResult
+export hotspots
+export coldspots
 export MeanDistResult
 export mean_dist
 export PhylobetaSESResult
@@ -188,6 +201,11 @@ include("community/data_metrics.jl")
 include("community/aggregation.jl")
 include("community/lineage_aggregation.jl")
 include("community/functional_beta.jl")
+include("community/functional_selection.jl")
+include("community/indicator_species.jl")
+include("tree/phylobuilder.jl")
+include("community/conservation.jl")
+include("community/value_classification.jl")
 include("community/regionalization.jl")
 include("community/regionalization_context.jl")
 include("community/regionalization_selection.jl")

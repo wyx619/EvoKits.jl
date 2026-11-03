@@ -62,9 +62,29 @@ fb = functional_beta(data, traits; k = 2, rng = MersenneTwister(42))
 
 每次随机起点选取不同物种；多次起点返回目标值最低的结果。空组由距离最远且所在组多于一个物种的成员填充，类别众数并列取字典序较小值。结果提供 `objective`、`iterations` 和 `converged`；这是局部优化，不能保证全局最优。需要复现时传入固定状态的 `rng`。结果中的数值中心采用 `(值 - numeric_offsets) / numeric_scales` 坐标，物种映射可跨群落复用。
 
-`collapse_traits` 支持 `:presence`、`:richness`、`:abundance` 及行比例归一化，保留全部功能组和空群落。`functional_beta` 可传 `pairs` 只计算指定群落对；其 beta 始终基于功能组是否出现，`statistic=:abundance` 只改变返回的聚合群落数值。未实现 R 的 `quick_elbow` 自动选组数；本实现的尺度和初始化规则是上面明确列出的约定，不承诺与 R 随机分组逐项相同。
+`collapse_traits` 支持 `:presence`、`:richness`、`:abundance` 及行比例归一化，保留全部功能组和空群落。`functional_beta` 可传 `pairs` 只计算指定群落对；其 beta 始终基于功能组是否出现，`statistic=:abundance` 只改变返回的聚合群落数值。本实现的尺度和初始化规则是上面明确列出的约定，不承诺与 R 随机分组逐项相同。
 
 已用本地 clustMixType 0.5.2 对照 40 个案例：对齐尺度、权重与初始原型后，分组、目标值、原型、稀疏聚合及 beta 一致。自动权重默认值、并列分配和重复/空组处理按各自约定；普通 Julia 测试读取六个固定 R 案例，不需要 R 环境。
+
+### 功能组数评估与选择
+
+`optimal_functional_groups` 拟合一组候选 k，并使用 phyloregion 的 `quick_elbow` 所依赖的 `lbow` 启发式给出建议。物种匹配、数值缩放、性状权重和 gamma 只准备一次，保持各候选目标值可比。
+
+```julia
+selection = optimal_functional_groups(data, traits; k = 2:4,
+    nstart = 20, rng = MersenneTwister(42))
+selection.k
+selection.objectives
+selection.converged
+selection.reason
+if selection.grouping !== nothing
+    selected_beta = functional_beta(data, selection.grouping)
+end
+```
+
+候选必须包含至少两个不同的正整数，且不超过性状完整的物种数。程序按 k 递增拟合，在候选和起点间顺次消耗传入的 RNG。其他拟合参数沿用 `functional_groups`，也支持只传性状表。返回的 `FunctionalGroupSelectionResult` 包括全部候选的目标值、迭代数、收敛标记，以及 `optimal_k` 和可直接复用的 `grouping`；结果只保留所选分组。
+
+启发式在归一化目标曲线上使用 `low=0.08`、`max_fraction=0.9`。它不保证生态意义上的最优组数。全零目标、候选未收敛、目标曲线增加或阈值无法建议时，`reason` 分别为 `:zero_objective`、`:nonconverged_candidates`、`:nonmonotone_objective`、`:thresholds_not_met`，建议 k 和 grouping 均为 `nothing`，完整诊断仍保留。使用建议前应检查目标曲线和收敛情况。
 
 ## 树分组与谱系群落聚合
 

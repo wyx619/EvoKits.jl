@@ -47,11 +47,11 @@ tips by label.
 
 | Topic | Contents |
 | --- | --- |
-| [Trees](docs/trees.md) | Newick I/O, topology, pruning, R/ape mapping and branch time slices |
+| [Trees](docs/trees.md) | Newick I/O, topology, pruning, taxonomy-aided completion, R/ape mapping and time slices |
 | [Community diversity](docs/community.md) | Sparse inputs, PD, WE/PE, relative PD, beta decomposition, SES and reusable contexts |
-| [Traits and aggregation](docs/aggregation.md) | Trait summaries, species groups, k-prototypes, functional beta and lineage aggregation |
-| [Regionalization and ordination](docs/regionalization.md) | Eight linkage methods, partition evaluation, posterior-tree mean distances and NMDS |
+| [Traits and aggregation](docs/aggregation.md) | Trait summaries, k-prototypes, group-count selection, functional beta and lineage aggregation |
+| [Regionalization and ordination](docs/regionalization.md) | Eight linkage methods, partition evaluation, posterior means, NMDS and KL indicators |
 | [Phylogenetic signals](docs/signals.md) | NRI/NTI, Pagel's lambda, K, independent contrasts and D |
-| [Conservation metrics](docs/conservation.md) | EDGE2 scores and extinction probability tools |
+| [Conservation metrics](docs/conservation.md) | EDGE/EDGE2, extinction probabilities, hotspots/coldspots and Jenks classes |
 | [API conventions](docs/api.md) | Combined example, ordering, result types and boundary behavior |
 | [Performance](docs/performance.md) | Runtime backend and benchmark timings |

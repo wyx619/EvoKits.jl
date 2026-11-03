@@ -113,15 +113,47 @@ Pass a reproducibly seeded `rng` to reproduce starts and results.
 `collapse_traits` supports `:presence`, `:richness`, `:abundance` and row
 proportions, retaining every functional group and empty site. `functional_beta`
 supports selected `pairs`; beta always uses group presence, even when the
-returned community contains abundances. R's `quick_elbow` automatic group count
-is not implemented. Scaling and initialization follow the rules above and do
-not promise identical random clusters to R.
+returned community contains abundances. Scaling and initialization follow the
+rules above and do not promise identical random clusters to R.
 
 Forty cases were checked against local clustMixType 0.5.2. With matching
 scales, weights and initial prototypes, memberships, objectives, prototypes,
 sparse aggregation and beta components agree. Default weight estimation,
 ties and duplicate/empty-group handling retain their documented differences.
 Ordinary Julia tests read six saved R cases and require no R environment.
+
+### Choose a functional group count
+
+`optimal_functional_groups` fits a collection of candidate counts and applies
+the `lbow` heuristic underlying phyloregion's `quick_elbow`. It prepares species
+matching, numeric scales, weights and gamma once so objectives are comparable.
+
+```julia
+selection = optimal_functional_groups(data, traits; k = 2:4,
+    nstart = 20, rng = MersenneTwister(42))
+selection.k
+selection.objectives
+selection.converged
+selection.reason
+if selection.grouping !== nothing
+    selected_beta = functional_beta(data, selection.grouping)
+end
+```
+
+Candidates must contain at least two distinct positive integers, no larger
+than the complete-trait species count. They are fitted in ascending order,
+consuming the supplied RNG sequentially across candidates and starts. Other
+fitting keywords follow `functional_groups`; the table-only overload is also
+available. The returned `FunctionalGroupSelectionResult` contains all candidate
+objectives, iterations and convergence flags, plus `optimal_k` and the reusable
+selected `grouping`. Only that grouping is retained in the result.
+
+The normalized objective curve is evaluated with `low=0.08` and
+`max_fraction=0.9`. This is a heuristic suggestion, without a claim of an
+ecologically optimal count. Both recommendation fields are `nothing` if
+`reason` is `:zero_objective`, `:nonconverged_candidates`,
+`:nonmonotone_objective` or `:thresholds_not_met`; the diagnostics remain
+available. Inspect the curve and convergence before using a recommendation.
 
 ## Tree groups and lineage communities
 

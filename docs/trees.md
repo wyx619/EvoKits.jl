@@ -2,7 +2,7 @@
 
 [Home](../README.md) · [简体中文](trees_zh.md)
 
-Read, query, prune and map trees, or compare branch history at different time depths.
+Read, query, prune, complete and map trees, or compare branch history at different time depths.
 
 ## Tree I/O and Topology
 
@@ -55,6 +55,51 @@ signature = phylo_edge_signature(pruned, 1; map = ref)
 `PhyloRef` provides stable node and edge identities, including conversions
 between `CompactTree` IDs and R/ape numbering. Its tables and signatures make
 tree results easier to compare across tools and runtimes.
+
+## Taxonomy-aided tree completion
+
+`phylobuilder` explicitly places missing species using original-tree genus
+anchors or named internal taxonomic nodes. It returns a `PhyloBuilderResult`
+with an independent `tree` and provenance for every requested species.
+
+```julia
+using DataFrames
+
+source = mktempdir() do dir
+    path = joinpath(dir, "source.nwk")
+    write_tree(path, "((G_a:1,G_b:1)G:1,(H_a:1,I_a:1)Family:1)Root;")
+    read_tree(path)
+end
+taxonomy = DataFrame(species = ["G_a", "G_c", "J_a", "Z_a"],
+    genus = ["G", "G", "J", "Z"], family = [missing, missing, "Family", missing])
+built = phylobuilder(taxonomy, source; extract = false)
+built.status             # [:tree, :genus, :family, :missing]
+built.added_species      # ["G_c", "J_a"]
+built.unmatched_species  # ["Z_a"]
+built.tree
+```
+
+The species column contains complete exact tip labels, not species epithets.
+A label vector is also accepted; genus is inferred only from labels containing
+an underscore or space. Optional table columns select genus and higher taxa;
+`taxonomy_cols=(:family,:suborder,:order,:class,:phylum)` sets fallback order.
+No label spelling is changed automatically.
+
+A missing species attaches to the original congeneric MRCA, or its parent
+when only one congener exists. If no congeneric tip exists, try a named
+internal genus node, then higher taxonomic nodes. All anchors come from the
+original tree; additions cannot seed later placements. Nonmonophyletic genera
+fail unless `nonmonophyly=:mrca` is explicit. Repeated matching internal names
+are ambiguous and fail. Unmatched species remain reported with `:missing`.
+
+By default new tip lengths use the anchor's longest descendant path and the
+source must be ultrametric (`atol=0`, `rtol=1e-8`). For other trees explicitly
+set `branch_length=:zero` or a finite nonnegative terminal length. Existing
+edges retain their lengths. Default `extract=true` then prunes to the matched
+requested species, which can contract unary paths and remove node labels;
+`false` retains every original tip. `anchor_nodes` records original compact
+node IDs even though output IDs/caches are rebuilt. `align_community` still
+rejects unknown species; apply this completion step explicitly when intended.
 
 ## Tree branch time slices
 

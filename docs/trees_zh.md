@@ -2,7 +2,7 @@
 
 [首页](../README_zh.md) · [English](trees.md)
 
-树的读写、查询、修剪、身份映射，以及不同时间深度的枝长切片。
+树的读写、查询、修剪、分类辅助补全、身份映射，以及不同时间深度的枝长切片。
 
 ## 树的读写与拓扑
 
@@ -49,6 +49,33 @@ signature = phylo_edge_signature(pruned, 1; map = ref)
 ```
 
 `PhyloRef` 提供稳定的节点和边身份标识，包括 `CompactTree` ID 与 R/ape 编号之间的转换。映射表和签名方便在不同工具及运行环境之间比较树结果。
+
+## 分类信息辅助的树补全
+
+`phylobuilder` 显式使用原树属级锚点或命名分类节点挂接缺失物种，返回 `PhyloBuilderResult`，包括独立的 `tree` 和每个请求物种的来源记录。
+
+```julia
+using DataFrames
+
+source = mktempdir() do dir
+    path = joinpath(dir, "source.nwk")
+    write_tree(path, "((G_a:1,G_b:1)G:1,(H_a:1,I_a:1)Family:1)Root;")
+    read_tree(path)
+end
+taxonomy = DataFrame(species = ["G_a", "G_c", "J_a", "Z_a"],
+    genus = ["G", "G", "J", "Z"], family = [missing, missing, "Family", missing])
+built = phylobuilder(taxonomy, source; extract = false)
+built.status             # [:tree, :genus, :family, :missing]
+built.added_species      # ["G_c", "J_a"]
+built.unmatched_species  # ["Z_a"]
+built.tree
+```
+
+表格的 species 列使用完整且精确的 tip 标签，不是种加词。也可输入标签向量，只有标签包含下划线或空格时才推断属。表格可选 genus 及更高分类列；默认 `taxonomy_cols=(:family,:suborder,:order,:class,:phylum)` 决定向上查找顺序，不自动修改标签拼写。
+
+缺失物种挂接在原树同属 tip 的 MRCA；只有一个同属 tip 时挂其父节点。没有同属 tip 时先查同名内部属节点，再查更高分类节点。所有锚点取自原树，新增物种不能成为后续匹配依据。属非单系默认报错，需显式 `nonmonophyly=:mrca` 才允许挂其 MRCA；匹配的内部节点重名也报错。未能放置的物种在结果中保留为 `:missing`。
+
+默认新 tip 枝长为锚点最长后代路径，原树须等时（`atol=0`、`rtol=1e-8`）。其他树须显式设置 `branch_length=:zero` 或有限非负末端枝长。原有边长保持；默认 `extract=true` 随后修剪到成功匹配的请求物种，可能收缩单子路径并移除节点标签；`false` 保留全部原 tip。输出重建节点编号和缓存，`anchor_nodes` 始终记录原树的紧凑节点 ID。`align_community` 继续拒绝未知物种；需要补全时先明确执行此步骤。
 
 ## 树枝长时间切片
 

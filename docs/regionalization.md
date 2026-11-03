@@ -2,7 +2,7 @@
 
 [Home](../README.md) · [简体中文](regionalization_zh.md)
 
-Cluster beta distances, evaluate partitions, average distances over posterior trees and run NMDS.
+Cluster beta distances, evaluate partitions, average posterior distances, run NMDS and rank regional indicator species.
 
 ## Regionalization from beta diversity
 
@@ -128,6 +128,38 @@ squared-distance units and can overflow/underflow, while EV and decisions use
 normalized distances. Scores visit all pairs once with O(n) extra storage.
 
 For ordination coordinates, see [NMDS](#nonmetric-multidimensional-scaling).
+
+## Regional indicator species
+
+`indicators` ranks species using directed Poisson or Bernoulli KL divergence
+between regions. Supply a species-by-region `theta` matrix from an external
+model: nonnegative finite intensities for `:poisson`, or probabilities in [0,1]
+for `:bernoulli`. Columns are used as supplied, without normalization.
+
+```julia
+theta = [0.9 0.1 0.2; 0.2 0.8 0.3; 0.1 0.3 0.7; 0.4 0.4 0.4]
+indicator_result = indicators(theta; species_labels = ["A", "B", "C", "D"],
+    region_labels = ["west", "east", "south"], method = :bernoulli,
+    comparison = :min, top_indicators = 3, shared = false)
+indicator_result.top_features  # regions × requested ranks; missing padding
+indicator_result.scores
+indicator_result.counts        # returned species count per region
+```
+
+For target p and comparison q, Poisson KL is `p*log(p/q)+q-p`;
+Bernoulli KL adds the corresponding term for `1-p` and `1-q`.
+`comparison=:min` (default) uses the least divergence to other regions;
+`:max` uses the greatest. At least two regions are required.
+With `shared=false`, a species is eligible only for its first maximum-theta
+region; `true` lets it appear in several regions. Scores tie in input species
+order. Too few eligible species leave `missing` ranks, not repeated species.
+`IndicatorSpeciesResult` retains labels, indices, names, scores and options.
+
+Zero/one boundaries use continuous limits, so infinite KL can be valid;
+zero against zero gives zero. Scoring uses one species vector per region,
+without a species-by-region-by-region tensor. This API does not fit a model
+for mixed regional memberships or infer theta from hard partitions. Define that
+statistical model explicitly before supplying its estimates here.
 
 ## Mean distances across posterior trees
 

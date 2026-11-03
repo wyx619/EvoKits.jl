@@ -76,6 +76,19 @@ signal.k
 - `pd_calc(tree, tips; variant=...)` 为 tip 子集返回一个标量；矩阵输入返回包含 `pd`、`richness` 和规范化 `variant` 的命名元组。支持 `TBL`、`MST`、`UEH`、`SBL` 和 `TIP`。
 - `pd_bootstrap(tree, ntips; ...)` 返回重复计算得到的标量向量；`pd_bootstrap(community, tree; ...)` 返回包含 `observed`、`replicates` 和 `richness` 的 `PDBootstrapResult`。
 
+### 分组与保护指标结果
+
+| 函数 | 结果与顺序 | 说明 |
+|---|---|---|
+| `optimal_functional_groups` | `FunctionalGroupSelectionResult`：递增候选 k、诊断、可为空的建议及可复用分组 | [聚合](aggregation_zh.md) |
+| `indicators` | `IndicatorSpeciesResult`：区域 × 排名，原物种索引，候选不足补 missing | [分区](regionalization_zh.md) |
+| `phylobuilder` | `PhyloBuilderResult`：独立树；按请求物种顺序的状态与原树锚点 ID | [树操作](trees_zh.md) |
+| `edge` | `EDGEResult`：完整树 tip 顺序的 ED/GE/EDGE 及缺失类别状态 | [保护指标](conservation_zh.md) |
+| `hotspots`、`coldspots` | `MetricSelectionResult`：原序标签与标记、分位数阈值及有效次数 | [保护指标](conservation_zh.md) |
+| `classify_values` | `ValueClassificationResult`：原序类别、上界及可用的 Jenks SSE | [保护指标](conservation_zh.md) |
+
+这些操作均不修改输入。向量指标汇总允许有限负值；`invalid=:skip` 在 missing/NaN 原位置保留 missing 标记或类别。这与群落输入必须非负的约定分别适用。
+
 ### 性状结果类型
 
 `pagel_lambda` 返回 `PagelLambdaResult`，包含[系统发育信号](signals_zh.md)中说明的 lambda 拟合值、profile 区间、似然比检验、拟合诊断和模型汇总字段。DataFrame 方法在拟合前按分类单元标签对齐数据。

@@ -297,20 +297,24 @@ function _functional_run(numeric, categorical, k, nw, penalties, rng, maxiter)
     return membership, means, modes, objective, iterations, converged
 end
 
-function _functional_fit(table, selected; k, species_col, trait_cols, categorical_traits,
-    missing_traits, numeric_scale, trait_weights, gamma, nstart, maxiter, rng,
+function _functional_workspace(table, selected; species_col, trait_cols, categorical_traits,
+    missing_traits, numeric_scale, trait_weights, gamma,
 )
-    k isa Integer && !(k isa Bool) && k >= 1 || throw(ArgumentError("k must be a positive integer"))
-    nstart isa Integer && !(nstart isa Bool) && nstart >= 1 || throw(ArgumentError("nstart must be a positive integer"))
-    maxiter isa Integer && !(maxiter isa Bool) && maxiter >= 1 || throw(ArgumentError("maxiter must be a positive integer"))
     species, excluded, raw, categorical, nc, cc = _functional_prepare(table, selected;
         species_col, trait_cols, categorical_traits, missing_traits)
-    k <= length(species) || throw(ArgumentError("k cannot exceed the number of species with complete traits"))
     numeric, offsets, scales = _functional_transform(raw, numeric_scale)
     nw, cw = _functional_weights(trait_weights, nc, cc)
     resolved_gamma = _functional_gamma(numeric, categorical, nw, cw, gamma)
     penalties = resolved_gamma .* cw
     all(isfinite, penalties) && all(>(0), penalties) || throw(ArgumentError("categorical penalties overflowed or underflowed"))
+    return (; species, excluded, numeric, categorical, nc, cc, offsets, scales, nw, cw,
+        numeric_scale, resolved_gamma, penalties)
+end
+
+function _functional_fit_prepared(work; k, nstart, maxiter, rng)
+    (; species, excluded, numeric, categorical, nc, cc, offsets, scales, nw, cw,
+        numeric_scale, resolved_gamma, penalties) = work
+    k <= length(species) || throw(ArgumentError("k cannot exceed the number of species with complete traits"))
     best = nothing
     for _ in 1:Int(nstart)
         candidate = _functional_run(numeric, categorical, Int(k), nw, penalties, rng, Int(maxiter))
@@ -329,8 +333,20 @@ function _functional_fit(table, selected; k, species_col, trait_cols, categorica
     membership = [remap[group] for group in membership]
     sizes = [count(==(group), membership) for group in 1:Int(k)]
     return FunctionalGroupingResult(copy(species), membership, ["functional_$i" for i in 1:Int(k)],
-        sizes, nc, cc, offsets, scales, centers[order, :], modes[order, :], nw, cw,
-        numeric_scale, resolved_gamma, objective, iterations, converged, Int(nstart), excluded)
+        sizes, copy(nc), copy(cc), copy(offsets), copy(scales), centers[order, :], modes[order, :], copy(nw), copy(cw),
+        numeric_scale, resolved_gamma, objective, iterations, converged, Int(nstart), copy(excluded))
+end
+
+function _functional_fit(table, selected; k, species_col, trait_cols, categorical_traits,
+    missing_traits, numeric_scale, trait_weights, gamma, nstart, maxiter, rng,
+)
+    for (value, name) in ((k, "k"), (nstart, "nstart"), (maxiter, "maxiter"))
+        value isa Integer && !(value isa Bool) && 1 <= value <= typemax(Int) ||
+            throw(ArgumentError("$name must be a positive Int-sized integer"))
+    end
+    work = _functional_workspace(table, selected; species_col, trait_cols, categorical_traits,
+        missing_traits, numeric_scale, trait_weights, gamma)
+    return _functional_fit_prepared(work; k, nstart, maxiter, rng)
 end
 
 """

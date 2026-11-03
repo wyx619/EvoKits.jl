@@ -2,7 +2,7 @@
 
 [首页](../README_zh.md) · [English](regionalization.md)
 
-对 beta 距离聚类、评估分区、汇总后验树距离，并进行 NMDS 排序。
+对 beta 距离聚类、评估分区、汇总后验树距离，进行 NMDS 排序并筛选区域指示物种。
 
 ## 基于 beta 多样性的生物地理分区
 
@@ -76,6 +76,26 @@ evaluation.reason
 建议 k 遵循本地 phyloregion 的阈值规则：先按降序尝试 `ev_thresholds=(0.95,0.9,0.8,0.75,0.67,0.5,0.33)`，再按升序尝试 `inc_thresholds=(0.01,0.05,0.1)`。分别找首个达到解释率阈值的 k、首个下一步增量足够小的 k，对首个成功阈值组合推荐两者较大值；容差为 `10^(-precision)`，默认 precision=3，评估末端 k 无下一步增量。这是阈值启发式。阈值不满足或全零离差时返回 `optimal_k=nothing` 及完整表，`reason` 分别为 `:thresholds_not_met`、`:zero_dispersion`。平方和按原始距离平方单位输出，可能溢出/下溢；EV 和判断使用归一化距离避免该溢出。全部评分只遍历每个群落对一次，额外存储 O(n)。
 
 排序坐标的计算见本页 [NMDS](#非度量多维尺度分析nmds)。
+
+## 区域指示物种
+
+`indicators` 通过区域之间的有向 Poisson 或 Bernoulli KL 散度给物种评分。输入为外部模型提供的“物种 × 区域”theta 矩阵：`:poisson` 使用有限非负强度，`:bernoulli` 使用 [0,1] 概率。按原值计算，不自动归一化列。
+
+```julia
+theta = [0.9 0.1 0.2; 0.2 0.8 0.3; 0.1 0.3 0.7; 0.4 0.4 0.4]
+indicator_result = indicators(theta; species_labels = ["A", "B", "C", "D"],
+    region_labels = ["west", "east", "south"], method = :bernoulli,
+    comparison = :min, top_indicators = 3, shared = false)
+indicator_result.top_features  # 区域 × 请求排名，候选不足补 missing
+indicator_result.scores
+indicator_result.counts        # 每个区域实际返回的物种数
+```
+
+目标区域参数 p 与其他区域参数 q 的 Poisson KL 为 `p*log(p/q)+q-p`，Bernoulli KL 再加上 `1-p` 对 `1-q` 的对应项。`comparison=:min`（默认）取与其他区域的最小散度；`:max` 取最大散度。输入至少需要两个区域。
+
+`shared=false` 时，物种只可入选其 theta 首个最大值所属的区域；`true` 允许同一物种出现在多个区域。分数并列按输入物种顺序排列；候选不足补 `missing`，不会重复填充物种。返回的 `IndicatorSpeciesResult` 保留标签、物种索引与名称、分数及参数。
+
+零和一使用连续极限处理，散度可以为 Inf，零对零为零。计算逐区域复用一个物种评分向量，不保存“物种 × 区域 × 区域”临时张量。此接口不拟合 grade-of-membership 模型，也不从硬分区 membership 自动生成 theta；应先明确统计模型，再传入其估计值。
 
 ## 多棵后验树的平均距离
 

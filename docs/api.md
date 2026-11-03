@@ -118,6 +118,21 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
   `pd_bootstrap(community, tree; ...)` returns `PDBootstrapResult` with
   `observed`, `replicates`, and `richness`.
 
+### Grouping and conservation results
+
+| Function | Result and ordering | Guide |
+|---|---|---|
+| `optimal_functional_groups` | `FunctionalGroupSelectionResult`: sorted candidate k, diagnostics, optional recommendation and reusable grouping | [Aggregation](aggregation.md) |
+| `indicators` | `IndicatorSpeciesResult`: regions × ranks, original species indices, missing padding | [Regionalization](regionalization.md) |
+| `phylobuilder` | `PhyloBuilderResult`: independent tree; status and original anchor IDs in requested-species order | [Trees](trees.md) |
+| `edge` | `EDGEResult`: full-tree tip order, ED/GE/EDGE and missing-category status | [Conservation](conservation.md) |
+| `hotspots`, `coldspots` | `MetricSelectionResult`: input-order flags and labels, quantile threshold and valid counts | [Conservation](conservation.md) |
+| `classify_values` | `ValueClassificationResult`: input-order classes, upper bounds and optional Jenks SSE | [Conservation](conservation.md) |
+
+These operations preserve their inputs. Vector metric summaries accept finite
+negative values; `invalid=:skip` preserves missing/NaN positions with missing
+flags/classes. This policy is separate from nonnegative community inputs.
+
 ### Trait Result Types
 
 `pagel_lambda` returns `PagelLambdaResult` with the fitted lambda, profile
