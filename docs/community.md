@@ -1,8 +1,8 @@
-# Community diversity and endemism
+# Community diversity and structure
 
 [Home](../README.md) · [简体中文](community_zh.md)
 
-Labeled dense and sparse inputs, PD, endemism, beta decomposition, reusable contexts and null models.
+Labeled dense and sparse inputs, PD, endemism, beta decomposition, NRI/NTI, reusable contexts and null models.
 
 The examples on this page share the following tree:
 
@@ -150,6 +150,63 @@ For Caper-compatible ED handling on polytomies, use
 `evol_distinct(tree; type = :fair_proportion,
 polytomy_correction = :isaac)`. The other supported modes are `:mooers` and
 `:none`.
+
+## NRI and NTI
+
+NRI and NTI describe within-community phylogenetic structure relative to a
+null model. They are the negative standardized effects of MPD and MNTD:
+`NRI = (null_mpd_mean - observed_mpd) / null_mpd_sd`, with the corresponding
+MNTD formula for NTI. Positive values indicate clustering and negative values
+indicate overdispersion relative to the chosen null model.
+
+For a single observed community and a local species pool, use `nri_nti`:
+
+```julia
+pool = ["A", "B", "C", "D"]
+observed = ["A", "B", "D"]
+
+result = nri_nti(tree, pool, observed; nreps = 999, seed = 20260713)
+result.nri
+result.nti
+result.status   # :ok or :null_sd_zero
+```
+
+The pool is sampled without replacement at the observed richness. Both tip
+labels and tip positions (`1:tree.ntips`) are accepted. `nri_nti` uses a stable
+random generator and a local virtual-tree MPD/MNTD calculation; it does not
+assume a global species pool or retain all null replicates in memory. The
+reference field names `NRI`, `NTI`, `MPD_obs`, and `MNTD_obs` are also available
+as compatibility properties.
+
+For a batch of spatial grids, pass `grid_id` so the global seed is stably
+derived per grid, independent of processing order:
+
+```julia
+result = nri_nti(tree, pool, observed;
+    nreps = 999,
+    seed = 20260713,
+    grid_id = "1745",
+)
+```
+
+The effective derived seed is stored in `result.seed`. Do not combine `grid_id`
+with an explicit `rng`; an injected RNG already defines the random stream.
+
+For many grids, `nri_nti_table` accepts two standard delimited long tables with
+exactly the columns `grid_id,species`: one local-pool table and one
+observed-community table. Tables may be CSV, TSV, TXT, or another delimiter
+recognized by CSV.jl; use `delim = '\t'` when an explicit TSV delimiter is
+needed. Each grid must be a contiguous block in each file. Grids are processed
+in parallel when Julia starts with multiple threads. Replace the example
+paths below with your own input files.
+
+```julia
+batch = nri_nti_table(tree, "local_pool.tsv", "observed_community.tsv";
+                        nreps = 999, seed = 20260713, threaded = true,
+                        delim = '\t')
+batch.grid_ids
+batch.results
+```
 
 ## Endemism, Relative PD and Beta Decomposition
 

@@ -1,8 +1,8 @@
-# 群落多样性与特有性
+# 群落多样性与结构
 
 [首页](../README_zh.md) · [English](community.md)
 
-带标签的稠密与稀疏输入、PD、特有性、beta 分解、可复用上下文及零模型。
+带标签的稠密与稀疏输入、PD、特有性、beta 分解、NRI/NTI、可复用上下文及零模型。
 
 本页示例共用以下小树：
 
@@ -95,6 +95,46 @@ expected_pd(tree).expected_pd
 SES 虚拟边在深度相减可能丢失精度时，也会回退到原始分支累加，以保留长共享路径下的极短距离。
 
 如需 Caper 兼容的多分叉 ED 处理方式，可使用 `evol_distinct(tree; type = :fair_proportion, polytomy_correction = :isaac)`；其他支持的模式为 `:mooers` 和 `:none`。
+
+## NRI 和 NTI
+
+NRI 和 NTI 描述相对于零模型的群落系统发育结构，分别是 MPD 和 MNTD 标准化效应量的相反数：`NRI = (零模型 MPD 均值 - 观测 MPD) / 零模型 MPD 标准差`，NTI 对应使用 MNTD。正值表示相对于所选零模型的系统发育聚集，负值表示离散。
+
+对于单个观测群落及其本地物种池，使用 `nri_nti`：
+
+```julia
+pool = ["A", "B", "C", "D"]
+observed = ["A", "B", "D"]
+
+result = nri_nti(tree, pool, observed; nreps = 999, seed = 20260713)
+result.nri
+result.nti
+result.status   # :ok 或 :null_sd_zero
+```
+
+零模型从物种池中无放回抽取与观测群落物种数相同的物种。支持 tip 标签和 tip 位置（`1:tree.ntips`）。`nri_nti` 使用稳定随机数生成器和局部虚拟树计算 MPD/MNTD，不假设全球物种池，也不在内存中保存全部零模型重复结果。兼容属性还包括 `NRI`、`NTI`、`MPD_obs` 和 `MNTD_obs`。
+
+批量分析空间网格时，可传入 `grid_id`，使每个网格的随机种子由全局种子稳定派生，不受处理顺序影响：
+
+```julia
+result = nri_nti(tree, pool, observed;
+    nreps = 999,
+    seed = 20260713,
+    grid_id = "1745",
+)
+```
+
+派生后的实际种子保存在 `result.seed`。不要同时传入 `grid_id` 和显式的 `rng`，因为传入的 RNG 已定义随机数流。
+
+对于大量网格，`nri_nti_table` 接受两张标准分隔长表：一张为本地物种池，一张为观测群落；两表均使用 `grid_id`、`species` 两列。表格可以是 CSV、TSV、TXT 或 CSV.jl 支持的其他分隔格式；需要显式指定制表符时使用 `delim = '\t'`。每个文件中同一网格的记录必须连续。Julia 启动了多个线程时，可并行处理网格。请将下例中的文件路径替换为实际输入。
+
+```julia
+batch = nri_nti_table(tree, "local_pool.tsv", "observed_community.tsv";
+                        nreps = 999, seed = 20260713, threaded = true,
+                        delim = '\t')
+batch.grid_ids
+batch.results
+```
 
 ## 特有性、相对 PD 与 beta 分解
 
