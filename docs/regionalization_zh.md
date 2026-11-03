@@ -2,7 +2,7 @@
 
 [首页](../README_zh.md) · [English](regionalization.md)
 
-对 beta 距离聚类、评估分区、汇总后验树距离，进行 NMDS 排序并筛选区域指示物种。
+对 beta 距离或群落–物种网络分区、评估结果、汇总后验树距离，进行 NMDS 排序并筛选区域指示物种。
 
 ## 基于 beta 多样性的生物地理分区
 
@@ -76,6 +76,31 @@ evaluation.reason
 建议 k 遵循本地 phyloregion 的阈值规则：先按降序尝试 `ev_thresholds=(0.95,0.9,0.8,0.75,0.67,0.5,0.33)`，再按升序尝试 `inc_thresholds=(0.01,0.05,0.1)`。分别找首个达到解释率阈值的 k、首个下一步增量足够小的 k，对首个成功阈值组合推荐两者较大值；容差为 `10^(-precision)`，默认 precision=3，评估末端 k 无下一步增量。这是阈值启发式。阈值不满足或全零离差时返回 `optimal_k=nothing` 及完整表，`reason` 分别为 `:thresholds_not_met`、`:zero_dispersion`。平方和按原始距离平方单位输出，可能溢出/下溢；EV 和判断使用归一化距离避免该溢出。全部评分只遍历每个群落对一次，额外存储 O(n)。
 
 排序坐标的计算见本页 [NMDS](#非度量多维尺度分析nmds)。
+
+## 基于群落–物种网络的 Infomap
+
+`infomap` 直接从群落矩阵或 `CommunityData` 构建无向网络：群落和物种分别作为两类节点，每个正值连接一条边。算法通过多次搜索最小化映射方程目标，产生分区数，无需完整 beta 距离矩阵。
+
+```julia
+network_regions = infomap(regional_data; seed = 42, trials = 10)
+network_regions.membership       # 原始群落行序的分区归属
+network_regions.k
+network_regions.cluster_sizes
+network_regions.codelength       # 完整群落–物种分区的编码长度，单位 bit
+
+plain_network = infomap(regional_data; seed = 42, regularized = false)
+weighted_network = infomap(regional_data; seed = 42, weights = :abundance)
+```
+
+默认开启正则化，`regularization_strength=1.0`。它改变流量模型，可能改变归属和分区数，甚至合并互不连通的部分。解释小型或稀疏网络时，可比较不同设置；不能凭不同流量模型下编码长度的大小判断分区优劣。这是在二部网络上运行普通 Infomap，其先验不施加专门的二部模型约束，也不保证地理连续。
+
+本地 igraph 1.0.0 对照中，默认设置将两块各 2×2 的断开网络和 Africa 数据都合成一区。Africa 关闭正则化为三区，强度 0.1 在三个测试种子下均为四区。这些是敏感性结果，0.1 并非通用推荐强度。
+
+`weights=:binary` 将任意正值视为存在，`:abundance` 使用正的有限 Float64 丰度作为边权。输入必须有限且非负。空群落报错；未出现物种和显式存储的零值不产生节点或边。CSC 输入不转换成稠密群落或邻接矩阵。谱系或功能分区可传入 `collapse_range`、`collapse_traits` 返回的 `.community`。
+
+`InfomapResult` 按首个输入群落为区域编号，`cluster_sizes` 只统计群落，并记录边权模式、尝试次数、种子、正则化设置及底层 igraph 版本。`codelength` 对应包含物种节点的完整网络分区。相同输入顺序、设置和引擎版本下可通过种子复现，且不改变 Julia 的随机数状态；种子、输入重排或引擎版本变化可能产生不同局部最优解。
+
+phyloregion 参考使用的旧 igraph 核心不支持正则化，其流量定义也与当前核心不同。因此关闭正则化可用于比较，但不保证分区或编码长度与旧 R 逐值一致。
 
 ## 区域指示物种
 

@@ -2,7 +2,7 @@
 
 [Home](../README.md) · [简体中文](regionalization_zh.md)
 
-Cluster beta distances, evaluate partitions, average posterior distances, run NMDS and rank regional indicator species.
+Cluster beta distances or site–species networks, evaluate partitions, average posterior distances, run NMDS and rank regional indicator species.
 
 ## Regionalization from beta diversity
 
@@ -128,6 +128,56 @@ squared-distance units and can overflow/underflow, while EV and decisions use
 normalized distances. Scores visit all pairs once with O(n) extra storage.
 
 For ordination coordinates, see [NMDS](#nonmetric-multidimensional-scaling).
+
+## Infomap on site–species networks
+
+`infomap` partitions an undirected network directly from a community matrix or
+`CommunityData`. Sites and species are separate node types; each positive entry
+creates one edge. It selects the number of regions through repeated map-equation
+searches and does not require a beta distance matrix.
+
+```julia
+network_regions = infomap(regional_data; seed = 42, trials = 10)
+network_regions.membership       # site assignments in input row order
+network_regions.k
+network_regions.cluster_sizes
+network_regions.codelength       # bits for the complete site–species partition
+
+plain_network = infomap(regional_data; seed = 42, regularized = false)
+weighted_network = infomap(regional_data; seed = 42, weights = :abundance)
+```
+
+Regularization is enabled by default, with `regularization_strength=1.0`.
+It changes the flow model and can change both assignments and region count,
+including merging disconnected components. Compare settings when interpreting
+small or sparse networks; a lower code length across different flow models does
+not establish a better partition. This is ordinary Infomap on a bipartite
+network; its prior does not enforce a separate bipartite model or geographic
+contiguity.
+
+In local igraph 1.0.0 comparisons, the default merged two disconnected 2×2
+blocks and the Africa dataset into one region. Africa gave three regions with
+regularization disabled and four at strength 0.1 for the three tested seeds.
+These are sensitivity checks, not a generally recommended strength.
+
+`weights=:binary` treats every positive value as presence; `:abundance` uses
+positive finite Float64 edge weights. Inputs must be finite and nonnegative.
+Empty sites are rejected; unobserved species and stored zeroes create no nodes
+or edges. CSC input is processed without a dense community or adjacency matrix.
+For lineage or functional partitions, pass the `.community` returned by
+`collapse_range` or `collapse_traits`.
+
+`InfomapResult` numbers regions by their first input site and counts only sites
+in `cluster_sizes`. It records weights, trials, seed, regularization settings
+and the native igraph version. `codelength` describes the full network partition,
+including species. A fixed seed reproduces a run with identical input order,
+settings and engine version; Julia's random stream is preserved. Local optima
+can differ across seeds, input permutations and engine versions.
+
+The phyloregion reference uses an older igraph core without regularization.
+Its flow definition also differs from the current core, so disabling
+regularization is a useful comparison rather than a promise of identical R
+partitions or code lengths.
 
 ## Regional indicator species
 

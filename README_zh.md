@@ -47,7 +47,7 @@ regions.membership
 | [树操作](docs/trees_zh.md) | Newick 读写、拓扑、修剪、分类辅助补全、R/ape 映射及时间切片 |
 | [群落多样性与结构](docs/community_zh.md) | 稀疏输入、PD、WE/PE、相对 PD、beta 分解、SES、NRI/NTI 及上下文复用 |
 | [性状与聚合](docs/aggregation_zh.md) | 性状汇总、k-prototypes、组数选择、功能 beta 及谱系聚合 |
-| [分区与排序](docs/regionalization_zh.md) | 八种连接法、分区评估、后验平均距离、NMDS 及 KL 指示物种 |
+| [分区与排序](docs/regionalization_zh.md) | 八种连接法、Infomap、分区评估、后验平均距离、NMDS 及 KL 指示物种 |
 | [系统发育信号](docs/signals_zh.md) | Pagel's lambda、K、独立对比及 D |
 | [保护指标](docs/conservation_zh.md) | EDGE/EDGE2、灭绝概率、热点/冷点及 Jenks 分级 |
 | [API 约定](docs/api_zh.md) | 组合示例、排序、结果类型及边界情况 |

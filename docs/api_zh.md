@@ -70,6 +70,7 @@ signal.k
 - `phylobeta` 返回 `PhylobetaResult`，包含 `sample_labels`、`total`、`turnover`、`nestedness`、`index_family` 和 `pairs`。
 - `phylobeta_ses` 返回 `PhylobetaSESResult`，包含群落标签和丰富度、`observed`、`null_mean`、`null_sd`、`z_score`、`p_value`、`valid_replicates`、`pairs`、所选指数族/成分及零模型参数。
 - `nmds` 返回 `NMDSResult`，包含标签、`points`、Kruskal `stress`、压缩的输入/坐标/拟合距离、最佳起点历史和终止原因，以及各起点的 stress、迭代数和收敛诊断。
+- `infomap` 返回 `InfomapResult`，包含群落 `sample_labels`、`membership`、`cluster_sizes`、`k`、完整网络的 `codelength`、边权模式、尝试次数、种子、正则化设置及 `igraph_version`。默认开启正则化，详见[网络分区](regionalization_zh.md#基于群落物种网络的-infomap)。
 - `ses_pd`、`ses_mpd` 和 `ses_mntd` 返回带类型的结果，包含观测值、零模型均值和标准差、z 分数、秩 p 值、运行次数和零模型。空群落的 MPD/MNTD 为 `NaN`；单物种群落也为 `NaN`，但正质量的丰度加权 MPD 为零。
 - `psv` 返回 `PSVResult`，包含 `psv`、`richness`、`variance` 和 `scale_vcv`；少于两个分类单元的群落的 PSV 和方差为 `NaN`。`psr`、`pse`、`psc` 和 `psd` 返回命名元组，其字段为相应函数文档中的指标名称。
 - `expected_pd` 和 `pd_variance` 返回 `ExpectedPDResult`；`richness` 为 `1:tree.ntips`，`expected_pd` 为解析期望值，`variance_pd` 为 `upper_bound` 选择的上界或精确 Picante 方差。

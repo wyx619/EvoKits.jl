@@ -4,6 +4,7 @@ using MKL
 using CSV
 using DataFrames
 using Distributions
+import IGraphs
 using LinearAlgebra
 using NewickTree
 using NLopt
@@ -106,6 +107,8 @@ export PhylobetaSESResult
 export phylobeta_ses
 export PhyloregionResult
 export phyloregion
+export InfomapResult
+export infomap
 export PhyloregionContext
 export prepare_phyloregion
 export cutree
@@ -208,6 +211,8 @@ include("community/regionalization/indicator_species.jl")
 include("community/conservation/conservation.jl")
 include("community/conservation/value_classification.jl")
 include("community/regionalization/regionalization.jl")
+include("community/regionalization/infomap_backend.jl")
+include("community/regionalization/infomap.jl")
 include("community/regionalization/regionalization_context.jl")
 include("community/regionalization/regionalization_selection.jl")
 include("community/regionalization/mean_dist.jl")
