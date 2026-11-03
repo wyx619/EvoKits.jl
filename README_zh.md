@@ -327,6 +327,37 @@ end
 
 比较多个绝对时间深度时，各次都从原树切片，并为每棵切片树重新准备群落上下文。切到树高时，所有 PD/PE 为零，beta 为 NaN，因此该端点不能直接用于分区。
 
+## 多棵后验树的平均距离
+
+`mean_dist` 按群落标签汇总多棵树的 beta 距离，返回 `MeanDistResult`。输入迭代器只遍历一次，可边计算每棵树的 beta 边汇总。所有 beta 输入须为同一种结果、同一 Sørensen/Jaccard 指数族；`component` 选择 `:total`（默认）、`:turnover` 或 `:nestedness`。
+
+```julia
+# data 为 CommunityData；posterior_trees 为 CompactTree 集合。
+average = mean_dist((phylobeta(data, tree) for tree in posterior_trees))
+average.distances             # 对齐后的平均距离矩阵
+average.counts                # 每个群落对的有限观测次数
+average.replicates            # 实际消费的后验树数量
+regions = phyloregion(average; k = 2)
+context = prepare_phyloregion(average)
+select_linkage(average)
+optimal_phyloregion(context)
+
+# 两个阶段都只处理指定群落对，保留重复、反向和自配对。
+requested = [(1, 2), (2, 3), (2, 1)]
+selected = mean_dist((phylobeta(data, tree; pairs = requested)
+    for tree in posterior_trees); pairs = requested)
+selected.distances            # 按请求顺序返回向量
+selected.counts
+```
+
+输出标签默认为首份输入的顺序，可用 `sample_labels` 显式指定完整集合。后续带标签输入可重排或缺少部分群落；未知标签、重名或空名报错。裸矩阵使用统一的输出标签顺序，维度须覆盖完整集合；各自带标签的矩阵写为 `(distances=D, sample_labels=labels)`，向量另提供自己的 `pairs`。普通距离与 beta 结果不能混合输入。
+
+默认 `nan_policy=:skip` 对每个群落对分别跳过 NaN，只累计有限值。没有有限值时，均值为 NaN、次数为零，空群落或零 PD 群落的未定义对角线也保留。`:propagate` 遇到任意已观测 NaN 就返回 NaN，`counts` 仍报告有限次数；缺少群落或群落对不算一次观测。Inf、负距离、非零有限对角线和不对称矩阵报错。不同 beta 成分的有效次数可能不同，因此分别求均值后不保证仍满足原分解恒等式。
+
+输出 `pairs` 索引输出标签，各份输入的 pairs 索引各自标签。输入中的重复或反向对须数值一致，每棵树只贡献一次；输出保留重复顺序。向量输入必须显式指定输出 pairs。指定对路径按标签和对数使用线性存储；完整输入矩阵仍会被完整校验，完整输出需要二次空间。输入不修改，缩放与补偿累加避免直接求和溢出并保留小量级距离。
+
+完整、有限、对角线为零的平均结果可直接接入分区、聚类树复用、连接法比较和 k 评估；含未定义群落时需显式选择子集。该流程汇总树之间的距离，不计算区域归属的后验支持率。已完成 42 组本地 R 对照，其中 18 组来自真实多树 beta；普通测试只读取一张含四个小案例的固定 TSV，无需 R。
+
 ## 基于 beta 多样性的生物地理分区
 
 `phyloregion` 接收完整距离矩阵，默认使用 UPGMA（平均连接）层次聚类，按显式指定的 `k` 划分区域。也可直接接收完整的 `BetaDissResult`、`PhylobetaResult`，保留群落标签；`component` 可选 `:total`（默认）、`:turnover`、`:nestedness`。

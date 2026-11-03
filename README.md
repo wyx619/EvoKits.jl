@@ -542,6 +542,61 @@ Use the original tree for each absolute depth and prepare a new community
 context per sliced tree. At full height all PD/PE values are zero and beta is
 undefined (`NaN`), so that endpoint cannot be passed directly to regionalization.
 
+## Mean distances across posterior trees
+
+`mean_dist` averages beta distances across posterior trees, aligning sites by
+their exact labels. It consumes an iterable once, so a generator can compute
+one tree's beta result at a time. All inputs must use the same beta kind and
+Sørensen/Jaccard family; `component` selects `:total` (default), `:turnover`, or
+`:nestedness`.
+
+```julia
+# data is CommunityData; posterior_trees is a collection of CompactTree objects.
+average = mean_dist((phylobeta(data, tree) for tree in posterior_trees))
+average.distances             # symmetric mean distances
+average.counts                # finite observations per site pair
+average.replicates            # number of posterior draws consumed
+regions = phyloregion(average; k = 2)
+context = prepare_phyloregion(average)
+select_linkage(average)
+optimal_phyloregion(context)
+
+# Compute and aggregate only these pairs, without full site-by-site matrices.
+requested = [(1, 2), (2, 3), (2, 1)]
+selected = mean_dist((phylobeta(data, tree; pairs = requested)
+    for tree in posterior_trees); pairs = requested)
+selected.distances            # vectors preserve request order and repetitions
+selected.counts
+```
+
+Output order defaults to the first input's labels. Supply `sample_labels` to
+set a complete domain explicitly; later labeled inputs may be reordered or
+contain subsets, but unknown labels fail. Plain matrices use this common order
+and complete domain. For individually labeled distances use named tuples
+`(distances=D, sample_labels=labels)`; vectors also need their own `pairs`.
+Matrix inputs cannot be mixed with beta results.
+
+By default `nan_policy=:skip` omits NaN separately for each pair. No finite
+observations means distance NaN and count zero; this also preserves undefined
+diagonals from empty or zero-PD sites. `:propagate` returns NaN if any observed
+value is NaN, retaining finite counts. Missing sites/pairs supply no observation.
+Infinities, negative distances, nonzero finite diagonals and asymmetric matrices
+fail. Different components can have different counts, so their separately
+averaged values need not retain the original decomposition identity.
+
+Output `pairs` index the output labels; each input's pair indices refer to its
+own labels. Repeated or reversed source pairs must agree and count once per
+draw. Pair-vector inputs require explicit output `pairs`. Selected output uses
+linear storage in labels and pairs; complete supplied matrices are still
+validated. Full output requires quadratic storage. Input arrays are untouched,
+and a scaled compensated sum handles very large and very small distances.
+
+Regionalization accepts only complete, finite mean matrices with zero diagonals;
+select a defined subset explicitly before clustering. This summarizes distances
+across trees and does not estimate posterior support for the resulting regions.
+Local R validation covers 42 ensembles, including 18 posterior beta ensembles;
+ordinary tests retain four small examples in one reference TSV and do not use R.
+
 ## Regionalization from beta diversity
 
 `phyloregion` clusters a complete distance matrix and cuts the full hierarchy
