@@ -96,7 +96,7 @@ function classify_values(values::AbstractVector; k=5, method::Symbol=:jenks,
     max_work isa Integer && !(max_work isa Bool) && max_work > 0 || throw(ArgumentError("max_work must be a positive integer"))
     method in (:jenks, :equal, :quantile) || throw(ArgumentError("method must be :jenks, :equal or :quantile"))
     data, valid = _metric_values(values; invalid)
-    labels = _community_data_labels(sample_labels, length(data), "sample")
+    labels = _validated_labels(sample_labels, length(data), "sample")
     sorted = sort(data[valid])
     isempty(sorted) && throw(ArgumentError("classification needs at least one valid value"))
     objective, normalized, scale = nothing, nothing, 1.0

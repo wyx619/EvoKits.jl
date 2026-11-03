@@ -32,7 +32,7 @@ descendant_tips(tree, tree.root; labels = true)
 tree_imbalance(tree; metric = :sackin)
 ```
 
-加权距离使用枝长；设置 `weighted = false` 可改为计算边数。源代码分为 `base`、`tree`、`traits` 和 `community` 四层。
+加权距离使用枝长；设置 `weighted = false` 可改为计算边数。树源码按查询、操作、映射和指标分组，文件位置及依赖顺序见[源码组织](development_zh.md)。
 
 ## 树的修剪与映射
 

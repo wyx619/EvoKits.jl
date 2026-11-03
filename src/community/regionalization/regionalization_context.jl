@@ -17,7 +17,7 @@ end
 function _prepare_phyloregion(distances, sample_labels, method, component)
     method = _region_method(method)
     n = size(distances, 1)
-    labels = _community_data_labels(sample_labels, n, "sample")
+    labels = _validated_labels(sample_labels, n, "sample")
     packed = _region_distance_buffer(distances)
     merge, heights = _region_hierarchy!(copy(packed), n, method)
     return PhyloregionContext(labels, packed, merge, heights, method, component)

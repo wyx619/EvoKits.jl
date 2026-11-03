@@ -46,30 +46,13 @@ end
 Base.size(data::CommunityData) = size(data.matrix)
 Base.size(data::CommunityData, dim::Integer) = size(data.matrix, dim)
 
-function _community_identifier(value, name)
-    (value isa AbstractString || (value isa Integer && !(value isa Bool))) ||
-        throw(ArgumentError("$name must be nonempty strings or integer identifiers"))
-    label = String(string(value))
-    isempty(strip(label)) && throw(ArgumentError("$name must not be empty"))
-    return label
-end
-
-function _community_data_labels(labels, n, prefix)
-    labels === nothing && return ["$(prefix)_$i" for i in 1:n]
-    labels isa AbstractVector || throw(ArgumentError("$(prefix)_labels must be a vector"))
-    length(labels) == n || throw(ArgumentError("$(prefix)_labels length must match the matrix dimension"))
-    result = [_community_identifier(label, "$(prefix)_labels") for label in labels]
-    length(unique(result)) == n || throw(ArgumentError("$(prefix)_labels must not contain duplicates"))
-    return result
-end
-
 function CommunityData(matrix::AbstractMatrix{<:Real};
     sample_labels = nothing, species_labels = nothing, storage::Symbol = :preserve,
 )
     _validate_community_values(matrix)
     storage in (:preserve, :sparse) || throw(ArgumentError("storage must be :preserve or :sparse"))
-    samples = _community_data_labels(sample_labels, size(matrix, 1), "sample")
-    species = _community_data_labels(species_labels, size(matrix, 2), "species")
+    samples = _validated_labels(sample_labels, size(matrix, 1), "sample")
+    species = _validated_labels(species_labels, size(matrix, 2), "species")
     owned = matrix isa SparseMatrixCSC || storage === :preserve ? copy(matrix) : sparse(matrix)
     owned isa SparseMatrixCSC && dropzeros!(owned)
     return CommunityData(owned, samples, species, Val(:validated))
@@ -120,8 +103,8 @@ function CommunityData(rows::AbstractVector, cols::AbstractVector, values::Abstr
     sample_labels::AbstractVector, species_labels::AbstractVector, duplicates::Symbol = :sum,
 )
     Base.require_one_based_indexing(rows, cols, values)
-    samples = _community_data_labels(sample_labels, length(sample_labels), "sample")
-    species = _community_data_labels(species_labels, length(species_labels), "species")
+    samples = _validated_labels(sample_labels, length(sample_labels), "sample")
+    species = _validated_labels(species_labels, length(species_labels), "species")
     matrix = _community_triplet_matrix(rows, cols, values, length(samples), length(species), duplicates)
     return CommunityData(matrix, samples, species, Val(:validated))
 end
@@ -133,9 +116,9 @@ function _community_table_column(table, column)
 end
 
 function _community_record_indices(values, labels, prefix)
-    records = [_community_identifier(value, "$prefix identifiers") for value in values]
+    records = [_label_identifier(value, "$prefix identifiers") for value in values]
     domain = labels === nothing ? unique(records) :
-        _community_data_labels(labels, length(labels), prefix)
+        _validated_labels(labels, length(labels), prefix)
     positions = Dict(label => i for (i, label) in enumerate(domain))
     indices = Vector{Int}(undef, length(records))
     for (i, label) in enumerate(records)
@@ -174,7 +157,7 @@ also accept `CommunityData` and align automatically with zero-filled tips.
 function align_community(data::CommunityData, tree::CompactTree; missing_tips::Symbol = :zero)
     missing_tips in (:zero, :error) || throw(ArgumentError("missing_tips must be :zero or :error"))
     _validate_community_data(data)
-    tree_species = _community_data_labels(tree.tip_labels, tree.ntips, "species")
+    tree_species = _validated_labels(tree.tip_labels, tree.ntips, "species")
     tree_set = Set(tree_species)
     unknown = filter(label -> !(label in tree_set), data.species_labels)
     isempty(unknown) || throw(ArgumentError("community species absent from tree: $(join(first(unknown, 5), ", "))"))
@@ -190,8 +173,8 @@ end
 
 function _validate_community_data(data::CommunityData)
     _validate_community_values(data.matrix)
-    _community_data_labels(data.sample_labels, size(data, 1), "sample")
-    _community_data_labels(data.species_labels, size(data, 2), "species")
+    _validated_labels(data.sample_labels, size(data, 1), "sample")
+    _validated_labels(data.species_labels, size(data, 2), "species")
     return nothing
 end
 

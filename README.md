@@ -55,3 +55,4 @@ tips by label.
 | [Conservation metrics](docs/conservation.md) | EDGE/EDGE2, extinction probabilities, hotspots/coldspots and Jenks classes |
 | [API conventions](docs/api.md) | Combined example, ordering, result types and boundary behavior |
 | [Performance](docs/performance.md) | Runtime backend and benchmark timings |
+| [Source layout](docs/development.md) | Internal directories and dependency order |

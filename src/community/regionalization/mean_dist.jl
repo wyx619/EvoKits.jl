@@ -20,7 +20,7 @@ end
 
 function _mean_dist_labels(labels)
     labels isa AbstractVector || throw(ArgumentError("sample_labels must be a vector"))
-    return _community_data_labels(labels, length(labels), "sample")
+    return _validated_labels(labels, length(labels), "sample")
 end
 
 function _mean_dist_input(input::Union{BetaDissResult, PhylobetaResult}, component, labels)
@@ -33,7 +33,7 @@ end
 
 function _mean_dist_input(input::AbstractMatrix{<:Real}, component, labels)
     return (distances = input,
-        labels = _community_data_labels(labels, size(input, 1), "sample"),
+        labels = _validated_labels(labels, size(input, 1), "sample"),
         pairs = nothing, kind = :distance, family = nothing)
 end
 

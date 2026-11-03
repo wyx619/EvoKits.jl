@@ -83,7 +83,7 @@ function _functional_prepare(table::AbstractDataFrame, selected;
 )
     _community_missing_mapping(missing_traits, "missing_traits")
     species_col, columns, forced = _functional_columns(table, species_col, trait_cols, categorical_traits)
-    labels = _community_data_labels(table[!, species_col], nrow(table), "species")
+    labels = _validated_labels(table[!, species_col], nrow(table), "species")
     positions = Dict(label => i for (i, label) in enumerate(labels))
     requested = selected === nothing ? labels : selected
     rows, species, excluded = Int[], String[], String[]
@@ -403,8 +403,8 @@ function functional_groups(data::CommunityData, traits::AbstractDataFrame; k, sp
 end
 
 function _functional_mapping(grouping::FunctionalGroupingResult)
-    labels = _community_data_labels(grouping.species_labels, length(grouping.membership), "species")
-    groups = _community_data_labels(grouping.group_labels, length(grouping.group_labels), "group")
+    labels = _validated_labels(grouping.species_labels, length(grouping.membership), "species")
+    groups = _validated_labels(grouping.group_labels, length(grouping.group_labels), "group")
     !isempty(groups) && length(grouping.group_sizes) == length(groups) ||
         throw(ArgumentError("functional grouping metadata dimensions do not match"))
     sizes = zeros(Int, length(groups))

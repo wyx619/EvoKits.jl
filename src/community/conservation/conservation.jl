@@ -50,7 +50,7 @@ function _metric_tail(values; sample_labels=nothing, reference=nothing,
     prob isa Real && !(prob isa Bool) && isfinite(prob) && 0 < prob <= 100 &&
         0 < Float64(prob) <= 100 || throw(ArgumentError("prob is a percentage in (0,100]"))
     data, valid = _metric_values(values; invalid)
-    labels = _community_data_labels(sample_labels, length(data), "sample")
+    labels = _validated_labels(sample_labels, length(data), "sample")
     refs, reference_valid = reference === nothing ? (data, valid) : _metric_values(reference; invalid)
     sorted = sort(refs[reference_valid])
     isempty(sorted) && throw(ArgumentError("the threshold reference has no valid values"))
@@ -140,9 +140,9 @@ function edge(tree::CompactTree, categories::AbstractVector; tip_labels=tree.tip
     ge_mapping=nothing, missing_category::Symbol=:skip,
 )
     missing_category in (:skip, :error) || throw(ArgumentError("missing_category must be :skip or :error"))
-    _community_data_labels(tree.tip_labels, tree.ntips, "species")
+    _validated_labels(tree.tip_labels, tree.ntips, "species")
     all(x -> isfinite(x) && x >= 0, tree.edge_length) || throw(ArgumentError("invalid tree branch lengths"))
-    labels = _community_data_labels(tip_labels, length(categories), "species")
+    labels = _validated_labels(tip_labels, length(categories), "species")
     positions = Dict(label => i for (i, label) in enumerate(tree.tip_labels))
     mapping = _edge_mapping(ge_mapping)
     ge = Vector{Union{Missing, Float64}}(missing, tree.ntips)

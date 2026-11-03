@@ -16,15 +16,15 @@ function _phylobuilder_genus(label)
 end
 
 function _phylobuilder_records(species::AbstractVector; species_col, genus_col, taxonomy_cols)
-    labels = _community_data_labels(species, length(species), "species")
+    labels = _validated_labels(species, length(species), "species")
     genera = [_phylobuilder_genus(label) for label in labels]
     return labels, genera, Pair{Symbol, Vector{Union{Nothing, String}}}[]
 end
 
 function _phylobuilder_records(table::AbstractDataFrame; species_col, genus_col, taxonomy_cols)
     String(species_col) in names(table) || throw(ArgumentError("taxonomy table lacks species column"))
-    labels = _community_data_labels(table[!, species_col], nrow(table), "species")
-    text(value) = ismissing(value) ? nothing : _community_identifier(value, "taxonomy")
+    labels = _validated_labels(table[!, species_col], nrow(table), "species")
+    text(value) = ismissing(value) ? nothing : _label_identifier(value, "taxonomy")
     genera = String(genus_col) in names(table) ? text.(table[!, genus_col]) :
         [_phylobuilder_genus(label) for label in labels]
     (taxonomy_cols isa Tuple || taxonomy_cols isa AbstractVector) &&
@@ -74,7 +74,7 @@ function phylobuilder(species::Union{AbstractVector, AbstractDataFrame}, tree::C
     nonmonophyly in (:error, :mrca) || throw(ArgumentError("nonmonophyly must be :error or :mrca"))
     mode = branch_length isa Symbol ? branch_length : _clade_time_value(branch_length, "branch_length")
     mode isa Symbol && mode ∉ (:ultrametric, :zero) && throw(ArgumentError("invalid branch_length mode"))
-    _community_data_labels(tree.tip_labels, tree.ntips, "species")
+    _validated_labels(tree.tip_labels, tree.ntips, "species")
     tree.ntips > 0 || throw(ArgumentError("source tree must contain tips"))
     all(x -> isfinite(x) && x >= 0, tree.edge_length) || throw(ArgumentError("invalid source branch lengths"))
     labels, genera, levels = _phylobuilder_records(species; species_col, genus_col, taxonomy_cols)

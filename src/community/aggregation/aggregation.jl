@@ -30,7 +30,7 @@ end
 
 function _community_mapping(identifiers, values)
     length(identifiers) == length(values) || throw(ArgumentError("species and values must have equal lengths"))
-    labels = _community_data_labels(identifiers, length(identifiers), "species")
+    labels = _validated_labels(identifiers, length(identifiers), "species")
     return Dict(label => value for (label, value) in zip(labels, values))
 end
 
@@ -56,8 +56,8 @@ end
 
 function _community_aggregation_input(matrix::AbstractMatrix{<:Real}, species_labels, sample_labels)
     _validate_community_values(matrix)
-    species = _community_data_labels(species_labels, size(matrix, 2), "species")
-    samples = _community_data_labels(sample_labels, size(matrix, 1), "sample")
+    species = _validated_labels(species_labels, size(matrix, 2), "species")
+    samples = _validated_labels(sample_labels, size(matrix, 1), "sample")
     return species, samples
 end
 
@@ -197,9 +197,9 @@ end
 
 function _community_group_indices(mapping, species, group_labels)
     raw = _community_mapping_values(mapping, species)
-    groups = [ismissing(value) ? missing : _community_identifier(value, "group identifiers") for value in raw]
+    groups = [ismissing(value) ? missing : _label_identifier(value, "group identifiers") for value in raw]
     domain = group_labels === nothing ? String[value for value in unique(groups) if !ismissing(value)] :
-        _community_data_labels(group_labels, length(group_labels), "group")
+        _validated_labels(group_labels, length(group_labels), "group")
     positions = Dict(label => i for (i, label) in enumerate(domain))
     indices = zeros(Int, length(groups))
     for (col, group) in enumerate(groups)

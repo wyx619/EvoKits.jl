@@ -164,7 +164,7 @@ function phylobeta_ses(community::AbstractMatrix{<:Real}, tree::CompactTree;
     model = _beta_ses_model(null_model)
     _validate_community_branch_lengths(tree)
     n = size(community, 1)
-    labels = _community_data_labels(sample_labels, n, "sample")
+    labels = _validated_labels(sample_labels, n, "sample")
     selected = _community_pairs(pairs, n)
     rows = _community_tip_rows(community, tree, tip_labels)
     null = _CommunityNullWorkspace(rows, tree.ntips)

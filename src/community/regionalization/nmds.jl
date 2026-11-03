@@ -350,7 +350,7 @@ This numeric core does not transform community data, fit species scores,
 apply step-across/half-change scaling, or construct maps and colors.
 """
 function nmds(distances::AbstractMatrix{<:Real}; sample_labels = nothing, kwargs...)
-    labels = _community_data_labels(sample_labels, size(distances, 1), "sample")
+    labels = _validated_labels(sample_labels, size(distances, 1), "sample")
     return _nmds(_region_distance_buffer(distances), labels, :distance, nothing; kwargs...)
 end
 
@@ -358,7 +358,7 @@ function nmds(beta::Union{BetaDissResult, PhylobetaResult}; component::Symbol = 
     _community_data_keywords(kwargs)
     _validate_community_beta_family(beta.index_family)
     packed = _region_distance_buffer(_region_beta_distances(beta, component))
-    labels = _community_data_labels(beta.sample_labels, length(beta.sample_labels), "sample")
+    labels = _validated_labels(beta.sample_labels, length(beta.sample_labels), "sample")
     length(labels) * (length(labels) - 1) ÷ 2 == length(packed) ||
         throw(ArgumentError("beta matrix must match sample labels"))
     return _nmds(packed, labels, component, beta.index_family; kwargs...)
@@ -372,7 +372,7 @@ function nmds(result::MeanDistResult; kwargs...)
         throw(ArgumentError("NMDS requires a full mean distance matrix, not selected pairs"))
     n = length(result.sample_labels)
     size(result.distances) == (n, n) || throw(ArgumentError("mean distance matrix must match sample labels"))
-    labels = _community_data_labels(result.sample_labels, n, "sample")
+    labels = _validated_labels(result.sample_labels, n, "sample")
     return _nmds(_region_distance_buffer(result.distances), labels, result.component, result.index_family; kwargs...)
 end
 
@@ -385,6 +385,6 @@ end
 function nmds(context::PhyloregionContext; kwargs...)
     _community_data_keywords(kwargs)
     n = length(context.sample_labels)
-    labels = _community_data_labels(context.sample_labels, n, "sample")
+    labels = _validated_labels(context.sample_labels, n, "sample")
     return _nmds(context.distances, labels, context.component, nothing; kwargs...)
 end

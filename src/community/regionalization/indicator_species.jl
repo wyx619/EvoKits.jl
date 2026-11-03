@@ -50,8 +50,8 @@ function indicators(theta::AbstractMatrix{<:Real}; species_labels=nothing, regio
     comparison in (:min, :max) || throw(ArgumentError("comparison must be :min or :max"))
     top_indicators isa Integer && !(top_indicators isa Bool) && 1 <= top_indicators <= typemax(Int) ||
         throw(ArgumentError("top_indicators must be a positive Int-sized integer"))
-    species = _community_data_labels(species_labels, n, "species")
-    labels = _community_data_labels(region_labels, regions, "region")
+    species = _validated_labels(species_labels, n, "species")
+    labels = _validated_labels(region_labels, regions, "region")
     data = Matrix{Float64}(undef, n, regions)
     for j in 1:regions, i in 1:n
         value = theta[i, j]

@@ -52,3 +52,4 @@ regions.membership
 | [保护指标](docs/conservation_zh.md) | EDGE/EDGE2、灭绝概率、热点/冷点及 Jenks 分级 |
 | [API 约定](docs/api_zh.md) | 组合示例、排序、结果类型及边界情况 |
 | [性能](docs/performance_zh.md) | 运行后端与性能基准 |
+| [源码组织](docs/development_zh.md) | 内部目录职责与依赖顺序 |

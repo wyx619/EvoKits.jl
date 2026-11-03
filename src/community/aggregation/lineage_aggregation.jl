@@ -19,8 +19,8 @@ function _copy_clade_grouping(grouping)
 end
 
 function _lineage_mapping(grouping)
-    labels = _community_data_labels(grouping.tip_labels, length(grouping.membership), "species")
-    groups = _community_data_labels(grouping.group_labels, grouping.actual_k, "group")
+    labels = _validated_labels(grouping.tip_labels, length(grouping.membership), "species")
+    groups = _validated_labels(grouping.group_labels, grouping.actual_k, "group")
     length(grouping.group_nodes) == length(grouping.group_sizes) == grouping.actual_k ||
         throw(ArgumentError("grouping metadata dimensions do not match"))
     counts = zeros(Int, grouping.actual_k)

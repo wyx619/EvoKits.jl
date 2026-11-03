@@ -35,8 +35,8 @@ tree_imbalance(tree; metric = :sackin)
 ```
 
 Weighted distances use branch lengths; pass `weighted = false` for edge
-counts. The source is organized into four layers: `base`, `tree`, `traits`,
-and `community`.
+counts. Tree code is grouped into queries, operations, mapping and metrics;
+see the [source layout](development.md) for file locations and dependency order.
 
 ## Prune and Map Trees
 
