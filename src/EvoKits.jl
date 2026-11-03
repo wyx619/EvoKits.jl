@@ -106,6 +106,8 @@ export PhylobetaSESResult
 export phylobeta_ses
 export PhyloregionResult
 export phyloregion
+export GoMResult
+export fitgom
 export PhyloregionContext
 export prepare_phyloregion
 export cutree
@@ -205,6 +207,8 @@ include("community/aggregation/lineage_aggregation.jl")
 include("community/aggregation/functional_beta.jl")
 include("community/aggregation/functional_selection.jl")
 include("community/regionalization/indicator_species.jl")
+include("community/regionalization/gom_fit.jl")
+include("community/regionalization/gom.jl")
 include("community/conservation/conservation.jl")
 include("community/conservation/value_classification.jl")
 include("community/regionalization/regionalization.jl")

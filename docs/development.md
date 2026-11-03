@@ -29,6 +29,10 @@ base and tree layers load before traits and community; `phylobuilder` therefore
 works without community definitions. Dependencies between community files
 determine their load order even when they occupy different subdirectories.
 
+`gom.jl` exposes fixed-k mixture results and the indicator adapter;
+`gom_fit.jl` implements sparse likelihood/EM accumulation and safeguarded
+log-ratio acceleration. It uses existing Julia dependencies.
+
 Keep numerical tests under `test/` and small offline reference tables under
 `test/fixtures/`. Run the affected test files and package-loading checks for
 structural changes. Local validation scripts and historical source snapshots

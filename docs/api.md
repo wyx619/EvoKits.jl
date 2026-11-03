@@ -99,6 +99,9 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
 - `nmds` returns `NMDSResult` with labels, `points`, Kruskal `stress`, packed
   input/score/fitted distances, the best start's history and stopping reason,
   and per-start stress, iteration and convergence diagnostics.
+- `fitgom` returns `GoMResult` with labeled `omega`/`theta`, hard membership,
+  the NEF objective, EM residual and per-start convergence diagnostics.
+  `indicators(fit)` ranks its species. See [mixed membership](regionalization.md#mixed-regional-membership).
 - `ses_pd`, `ses_mpd`, and `ses_mntd` return typed results containing observed
   values, null means/SDs, z scores, rank p-values, run count, and null model.
   Empty communities have `NaN` MPD/MNTD. Singleton observations are `NaN`,

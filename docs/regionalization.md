@@ -2,7 +2,7 @@
 
 [Home](../README.md) · [简体中文](regionalization_zh.md)
 
-Cluster beta distances, evaluate partitions, average posterior distances, run NMDS and rank regional indicator species.
+Cluster beta distances, fit mixed memberships, evaluate partitions, average posterior distances, run NMDS and rank regional indicator species.
 
 ## Regionalization from beta diversity
 
@@ -129,10 +129,57 @@ normalized distances. Scores visit all pairs once with O(n) extra storage.
 
 For ordination coordinates, see [NMDS](#nonmetric-multidimensional-scaling).
 
+## Mixed regional membership
+
+`fitgom` fits a fixed number `k` of latent regions to a community matrix or
+`CommunityData`. A site can combine several regions: `omega` contains its
+mixture weights, while `theta` describes each region's species composition.
+Weights express composition, not classification confidence.
+
+```julia
+using StableRNGs
+
+gom = fitgom(regional_data; k = 2, nstart = 5, rng = StableRNG(42))
+gom.omega                 # sites × regions, each row sums to one
+gom.theta                 # species × regions, each column sums to one
+gom.membership            # first maximum per site
+gom.converged, gom.reason, gom.residual
+gom.start_objectives      # all starts, including any that did not converge
+gom_indicators = indicators(gom; top_indicators = 3)
+```
+
+Counts enter as supplied. Binary matrices fit presence composition; integer
+abundances fit a multinomial model. Fractional weights give a weighted
+likelihood. The scalar `shape` defaults to `1/(k*species)`; the maximized NEF
+objective is `sum(x*log(q)) + shape*sum(log(theta)) + sum(log(omega))/k`, with
+`q[i,j] = sum(omega[i,r]*theta[j,r] for r in 1:k)`. `shape` is a positive
+pseudocount, not `shape-1`. Rescaling counts changes the prior/data balance.
+
+The optimizer uses EM and accepts log-ratio extrapolations only when they
+improve the objective. `accelerate=false` uses EM alone. Each iteration takes
+two EM steps. `init_theta` and `init_omega` optionally supply positive factors
+for the first start; columns/rows are normalized. Subsequent starts are random.
+The largest objective wins. `history`, `start_*` diagnostics, `maxiter`, `tol`
+and `accelerate` record the run. `residual` is the largest absolute factor change
+under one ordinary EM step; `converged` requires `residual <= tol` (default
+`1e-8`). Reasons are `:tolerance`, `:maxiter`, or `:stalled`. Local optima remain
+possible. The objective matches scalar-shape maptpx; its conditional SQP/EM
+optimizer can follow a different path.
+
+Sites/species keep input order. Regions are sorted by decreasing total
+`omega`, with stable exact ties; hard `cluster_sizes` can contain zeroes.
+Empty sites are errors. All-zero species columns stay in the model, affecting
+the prior and retaining a positive prior contribution in `theta`. CSC input
+uses O(nnz + (sites+species)*k) work storage without a dense community or an
+nnz × k responsibility array. Inputs are not mutated. Use aggregated
+`.community` for lineage or functional fits. `1 <= k <= min(sites,species)`;
+automatic k selection, Bayes factors and uncertainty estimates remain in the
+long-term plan.
+
 ## Regional indicator species
 
 `indicators` ranks species using directed Poisson or Bernoulli KL divergence
-between regions. Supply a species-by-region `theta` matrix from an external
+between regions. Supply a `GoMResult` or a species-by-region `theta` matrix from an external
 model: nonnegative finite intensities for `:poisson`, or probabilities in [0,1]
 for `:bernoulli`. Columns are used as supplied, without normalization.
 
@@ -157,9 +204,8 @@ order. Too few eligible species leave `missing` ranks, not repeated species.
 
 Zero/one boundaries use continuous limits, so infinite KL can be valid;
 zero against zero gives zero. Scoring uses one species vector per region,
-without a species-by-region-by-region tensor. This API does not fit a model
-for mixed regional memberships or infer theta from hard partitions. Define that
-statistical model explicitly before supplying its estimates here.
+without a species-by-region-by-region tensor. This scorer does not infer theta
+from hard partitions; use `fitgom` or supply another fitted statistical model.
 
 ## Mean distances across posterior trees
 

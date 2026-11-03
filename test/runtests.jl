@@ -18,6 +18,7 @@ include("phyloregion_extensions.jl")
 include("mean_dist.jl")
 include("beta_ses.jl")
 include("nmds.jl")
+include("gom.jl")
 
 @testset "Tree file I/O" begin
     mktempdir() do dir

@@ -2,7 +2,7 @@
 
 [首页](../README_zh.md) · [English](regionalization.md)
 
-对 beta 距离分区、评估结果、汇总后验树距离，进行 NMDS 排序并筛选区域指示物种。
+对 beta 距离分区、拟合混合归属、评估结果、汇总后验树距离，进行 NMDS 排序并筛选区域指示物种。
 
 ## 基于 beta 多样性的生物地理分区
 
@@ -77,9 +77,31 @@ evaluation.reason
 
 排序坐标的计算见本页 [NMDS](#非度量多维尺度分析nmds)。
 
+## 区域混合归属
+
+`fitgom` 接收群落矩阵或 `CommunityData`，拟合固定 `k` 个潜在区域。一个群落可以同时具有多个区域的组成特征：`omega` 给出混合权重，`theta` 给出各区域的物种组成概率。权重表达组成混合程度，不是分类正确的置信度。
+
+```julia
+using StableRNGs
+
+gom = fitgom(regional_data; k = 2, nstart = 5, rng = StableRNG(42))
+gom.omega                 # 群落 × 区域，每行和为一
+gom.theta                 # 物种 × 区域，每列和为一
+gom.membership            # 每个群落首个最大权重所属区域
+gom.converged, gom.reason, gom.residual
+gom.start_objectives      # 所有起点，包括未收敛的起点
+gom_indicators = indicators(gom; top_indicators = 3)
+```
+
+输入按原值使用：二值矩阵拟合存在型组成，整数丰度对应多项式模型，分数权重对应加权似然。标量 `shape` 默认为 `1/(k×物种数)`。最大化的 NEF 目标为 `sum(x*log(q)) + shape*sum(log(theta)) + sum(log(omega))/k`，其中 `q[i,j] = sum(omega[i,r]*theta[j,r] for r in 1:k)`。`shape` 直接作为正伪计数使用，不减一；整体缩放计数会改变先验与数据的权衡。
+
+优化采用 EM，只接受使目标进一步上升的对数比外推；`accelerate=false` 使用纯 EM，每轮均含两步 EM。`init_theta`、`init_omega` 可提供第一个起点的正初值，按列/行归一化；其余起点随机初始化，返回目标最大的解。`history`、`start_*`、`maxiter`、`tol`、`accelerate` 保留过程和设置。`residual` 是再做一步普通 EM 时两个因子的最大绝对变化，只有 `residual <= tol`（默认 `1e-8`）才标记收敛；终止原因为 `:tolerance`、`:maxiter` 或 `:stalled`。仍可能得到局部最优解。目标对齐 maptpx 的标量 shape 版本，其条件 SQP/EM 优化路径与这里不同。
+
+群落和物种保留输入顺序，区域按 `omega` 总权重降序排列，精确并列保留原序；硬归属的 `cluster_sizes` 可以包含零。空群落报错，全零物种列保留，参与先验的物种数并在 `theta` 中保留正的先验贡献。CSC 输入所需工作存储为 O(nnz + (群落数+物种数)×k)，不建立稠密群落或 nnz×k 责任矩阵，不修改输入。谱系/功能模型传入聚合后的 `.community`。`1 <= k <= min(群落数,物种数)`；自动选择 k、Bayes factor 和不确定性估计保留在长远规划。
+
 ## 区域指示物种
 
-`indicators` 通过区域之间的有向 Poisson 或 Bernoulli KL 散度给物种评分。输入为外部模型提供的“物种 × 区域”theta 矩阵：`:poisson` 使用有限非负强度，`:bernoulli` 使用 [0,1] 概率。按原值计算，不自动归一化列。
+`indicators` 通过区域之间的有向 Poisson 或 Bernoulli KL 散度给物种评分。可直接传入 `GoMResult`，或外部模型提供的“物种 × 区域”theta 矩阵：`:poisson` 使用有限非负强度，`:bernoulli` 使用 [0,1] 概率。按原值计算，不自动归一化列。
 
 ```julia
 theta = [0.9 0.1 0.2; 0.2 0.8 0.3; 0.1 0.3 0.7; 0.4 0.4 0.4]
@@ -95,7 +117,7 @@ indicator_result.counts        # 每个区域实际返回的物种数
 
 `shared=false` 时，物种只可入选其 theta 首个最大值所属的区域；`true` 允许同一物种出现在多个区域。分数并列按输入物种顺序排列；候选不足补 `missing`，不会重复填充物种。返回的 `IndicatorSpeciesResult` 保留标签、物种索引与名称、分数及参数。
 
-零和一使用连续极限处理，散度可以为 Inf，零对零为零。计算逐区域复用一个物种评分向量，不保存“物种 × 区域 × 区域”临时张量。此接口不拟合 grade-of-membership 模型，也不从硬分区 membership 自动生成 theta；应先明确统计模型，再传入其估计值。
+零和一使用连续极限处理，散度可以为 Inf，零对零为零。计算逐区域复用一个物种评分向量，不保存“物种 × 区域 × 区域”临时张量。评分器不从硬分区 membership 自动估计 theta；可先运行 `fitgom` 或传入其他统计模型的估计值。
 
 ## 多棵后验树的平均距离
 

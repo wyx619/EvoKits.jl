@@ -21,4 +21,6 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 
 共用标签校验位于 `base/labels.jl`：将非空字符串或整数标识符转换为唯一字符串标签，沿用已有默认标签与报错规则。树补全与群落输入使用同一套辅助函数。base 和 tree 先于 traits、community 加载，因此 `phylobuilder` 可在群落定义加载前独立使用。群落文件之间的依赖决定加载顺序，同一子目录的文件不要求连续加载。
 
+`gom.jl` 提供固定 k 混合归属结果及指示物种适配，`gom_fit.jl` 实现稀疏似然/EM 累计和有目标上升保护的对数比加速，使用现有 Julia 依赖。
+
 数值测试继续放在 `test/`，小型离线参考表放在 `test/fixtures/`。结构调整采用相关测试文件和包加载检查。本地验收脚本、历史源码快照保存在受 Git 忽略的 `validation/`；历史 `git show` 命令中的路径对应原提交的目录结构。
