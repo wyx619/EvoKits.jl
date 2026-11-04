@@ -49,3 +49,25 @@ validated even for a subset. Dense input takes `O(n*p + m log m)` work.
 The storage regression checks a 6,000 × 40,000 CSC collection against an
 8 MB cumulative-allocation bound after compilation. This is a regression bound,
 not peak-memory or runtime benchmark evidence. No new timing benchmark was run.
+
+## Multiple-site phylogenetic beta
+
+`phylobeta_multi` reuses sorted branch sets and orders selected sites by rooted
+PD. For an edge occupied at q sites, let R be the sum of zero-based site ranks
+where the edge occurs. Its coefficients in maximum/minimum unique-length sums
+are `R-q*(q-1)/2` and `q*(m-1)-R-q*(q-1)/2`. These nonnegative `Int128`
+coefficients remove shared branches before multiplying by branch length,
+preserving small terminal lengths attached to long stems. Adjacent PD gaps
+supply the difference between the two unique-length sums, and nestedness uses
+the defining product. Close PDs, overflowing intermediate sums or extreme
+scales use a 2304-bit arithmetic fallback; outputs remain `Float64`.
+
+After branch collection, m selected sites, e tree edges and b site-branch
+memberships require `O(b + e + m log m)` work and `O(e+m)` auxiliary storage.
+Matrix input first validates all rows and collects presence/branches;
+`CommunityContext` reuses its branch sets and tree snapshot. Neither path
+builds dense community, site-by-branch or site-pair matrices. The storage
+regression checks a 6,000 × 4,000 CSC collection with 18,000 stored presences,
+against 20 MB cumulative allocations for a direct call and 5 MB for a prepared
+call after compilation. These are regression bounds, not measured peak memory
+or timing comparisons.

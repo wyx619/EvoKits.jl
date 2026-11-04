@@ -362,6 +362,54 @@ and at least two nonempty sites, total and turnover are one and nestedness zero.
 Other cases follow their component denominators. No input is modified and no
 full pairwise matrix is built; see the [algorithm notes](performance.md#multiple-site-taxonomic-beta).
 
+## Multiple-site phylogenetic beta
+
+`phylobeta_multi` applies the same multiple-site decomposition to branch
+lengths. It accepts a dense/CSC matrix and tree, `CommunityData` and tree, or a
+prepared `CommunityContext`. For the collection above:
+
+```julia
+phylogeny = mktempdir() do dir
+    path = joinpath(dir, "phylogeny.nwk")
+    write_tree(path, "((A:1,B:2):3,(C:4,D:5):6);")
+    read_tree(path)
+end
+phylo_overall = phylobeta_multi(collection, phylogeny)
+phylo_overall.total          # 17/31
+phylo_overall.turnover       # 5/19
+phylo_overall.nestedness     # 168/589
+phylo_overall.pd             # [16, 15, 4]
+phylo_overall.pooled_pd      # 21
+
+phylo_context = prepare_community(collection, phylogeny)
+phylo_subset = phylobeta_multi(phylo_context;
+    samples = ["s3", "s1"], index_family = :jaccard)
+phylo_subset.sample_indices  # [3, 1]
+phylo_subset.pd              # [4, 16]
+phylo_subset.pooled_pd       # 16, only branches occupied by selected sites
+```
+
+`samples` follows the selection and validation rules of `beta_multi`.
+`PhylobetaMultiResult` owns the selected labels, original row indices, richness
+and rooted PD; its three beta components are scalars. Positive abundances mean
+presence. Matrix columns use tree-tip order or `tip_labels`; `CommunityData`
+aligns species labels and zero-fills absent tree tips.
+
+The formulas above use summed PD minus pooled PD for A, and unique branch
+lengths for M/X. Pooled PD is the union of branches occupied by the selected
+sites, including paths to the original root. Unobserved species contribute no
+branches. This agrees with betapart's direct tree calculation. The local
+phyloregion core uses full tree length for pooled PD, which can give negative
+multi-site components when branches are unobserved; that behavior is not used.
+
+Context calls reuse branch sets and recompute occupancy for the selected sites.
+They do not change the full-collection occupancy used by WE/PE. At least two
+selected sites are required. Empty or zero-PD sites remain; all-zero PD gives
+three `NaN`s. Exactly one positive-PD site gives total one and `NaN`
+turnover/nestedness. Other cases follow the component denominators. With two
+sites the decomposition reduces to `phylobeta`. Inputs remain unchanged and no
+full pairwise matrix is built; see the [algorithm notes](performance.md#multiple-site-phylogenetic-beta).
+
 ## Phylogenetic beta SES
 
 `phylobeta_ses` standardizes one phylogenetic beta component against a null

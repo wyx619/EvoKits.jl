@@ -231,6 +231,37 @@ subset.pooled_richness    # 3，基于所选群落重新计数
 
 至少选择两个群落。空群落保留，全部为空或零物种列时三项均为 `NaN`。只有一个非空群落时，总差异为一，替代与嵌套为 `NaN`；无共享物种且至少两个非空群落时，总差异和替代为一、嵌套为零。其余情况按各成分的分母判断。输入不修改，也不构造完整两两距离矩阵；算法说明见[性能专题](performance_zh.md#多群落分类-beta)。
 
+## 多群落系统发育 beta
+
+`phylobeta_multi` 将相同的多群落分解扩展到分支长度，支持稠密/CSC 矩阵和树、`CommunityData` 和树，或已准备的 `CommunityContext`。沿用上面的 `collection`：
+
+```julia
+phylogeny = mktempdir() do dir
+    path = joinpath(dir, "phylogeny.nwk")
+    write_tree(path, "((A:1,B:2):3,(C:4,D:5):6);")
+    read_tree(path)
+end
+phylo_overall = phylobeta_multi(collection, phylogeny)
+phylo_overall.total          # 17/31
+phylo_overall.turnover       # 5/19
+phylo_overall.nestedness     # 168/589
+phylo_overall.pd             # [16, 15, 4]
+phylo_overall.pooled_pd      # 21
+
+phylo_context = prepare_community(collection, phylogeny)
+phylo_subset = phylobeta_multi(phylo_context;
+    samples = ["s3", "s1"], index_family = :jaccard)
+phylo_subset.sample_indices  # [3, 1]
+phylo_subset.pd              # [4, 16]
+phylo_subset.pooled_pd       # 16，仅包含所选群落占据的分支
+```
+
+`samples` 沿用 `beta_multi` 的选择和校验规则。`PhylobetaMultiResult` 独立保存所选标签、原始行号、丰富度和含根 PD，三个 beta 成分为标量。正丰度表示存在；矩阵列按树 tip 顺序或 `tip_labels` 匹配，`CommunityData` 按物种标签对齐并为缺失 tip 补零。
+
+上述公式中的 A 改为 PD 之和减去合并 PD，M/X 使用独有分支长度。合并 PD 是所选群落实际占据的分支并集，保留到原树根的路径，未观测物种不增加分支；这与 betapart 的直接树计算一致。本地 phyloregion 核心将整棵树长作为合并 PD，在存在未观测分支时可能得到负的多群落成分，此处不沿用该行为。
+
+上下文调用复用分支集合，并在所选范围内重新统计占据数，不改变 WE/PE 使用的完整群落占据统计。至少选择两个群落；空群落和零 PD 群落均保留。所有 PD 为零时三项均为 `NaN`；只有一个正 PD 群落时，总差异为一，周转和嵌套为 `NaN`；其余情况按各成分分母判断。选择两个群落时退化为 `phylobeta`。输入不修改，也不建立完整两两矩阵；算法说明见[性能专题](performance_zh.md#多群落系统发育-beta)。
+
 ## 系统发育 beta SES
 
 `phylobeta_ses` 复用现有 SES 的稀疏随机化和在线统计，对一个系统发育 beta 成分计算标准化效应量。每次选择 `:sorensen` 或 `:jaccard`，以及 `:total`、`:turnover` 或 `:nestedness` 之一。

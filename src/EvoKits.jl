@@ -70,6 +70,7 @@ export PDBootstrapResult, pd_bootstrap
 export PhylobetaResult, phylobeta
 export BetaDissResult, beta_diss
 export BetaMultiResult, beta_multi
+export PhylobetaMultiResult, phylobeta_multi
 export comdist, comdistnt, unifrac, phylosor
 
 # Community aggregation and functional beta diversity
@@ -155,6 +156,7 @@ include("community/diversity/mntd.jl")
 include("community/diversity/beta.jl")
 include("community/diversity/taxonomic_beta.jl")
 include("community/diversity/beta_multi.jl")
+include("community/diversity/phylobeta_multi.jl")
 
 # Reusable community context and metric adapters
 include("community/core/context.jl")

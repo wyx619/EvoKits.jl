@@ -3,8 +3,8 @@
 
 Reusable presence-based community snapshot created by [`prepare_community`](@ref).
 Use it with `pd`, `pd_dataframe`, `weighted_endemism`, `phylo_endemism`,
-`relative_pd`, `phylobeta`, `unifrac`, and `phylosor`. The context owns its
-preprocessed arrays; its fields are internal and must not be mutated.
+`relative_pd`, `phylobeta`, `phylobeta_multi`, `unifrac`, and `phylosor`. The context
+owns its preprocessed arrays; its fields are internal and must not be mutated.
 """
 struct CommunityContext
     sample_labels::Vector{String}
@@ -32,9 +32,11 @@ rows are sites, columns are species, and finite positive values denote presence.
 Supply one column per tree tip, including absent species as zero columns.
 
 Returns a `CommunityContext` that reuses label matching, sorted branch sets,
-species/branch occupancy, and per-site summaries. Occupancy always refers to the
-complete collection supplied here; `pairs` indices in later `phylobeta` calls
-refer to these original rows. Species occupancy retains the input column order.
+species/branch occupancy, and per-site summaries. Stored occupancy refers to
+the complete collection supplied here; `pairs` indices in later `phylobeta`
+calls refer to these original rows. `phylobeta_multi` reuses branch sets and
+recomputes occupancy within its selected sites. Species occupancy retains the
+input column order.
 
 Later changes to the input matrix, tree, or labels do not affect the context.
 Rebuild it to analyze changed data. Metric results own their arrays and may be
@@ -140,6 +142,15 @@ function phylobeta(context::CommunityContext; index_family::Symbol = :sorensen, 
         index_family, selected)
     return PhylobetaResult(copy(context.sample_labels), total, turnover, nestedness,
         index_family, selected)
+end
+
+"""`phylobeta_multi(context; index_family=:sorensen, samples=nothing)` reuses branch sets and recomputes selected occupancy."""
+function phylobeta_multi(context::CommunityContext; index_family::Symbol = :sorensen, samples = nothing)
+    _validate_community_beta_family(index_family)
+    indices = _beta_multi_samples(samples, context.sample_labels)
+    length(indices) >= 2 || throw(ArgumentError("phylobeta_multi requires at least two selected sites"))
+    return _phylobeta_multi_result(view(context.branches, indices), context.branch_lengths,
+        context.sample_labels, indices, context.richness[indices], index_family)
 end
 
 """`unifrac(context)` calculates distances using the prepared branch sets."""

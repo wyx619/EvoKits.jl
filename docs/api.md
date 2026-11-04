@@ -96,6 +96,10 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
 - `beta_multi` returns `BetaMultiResult` with scalar `total`/`turnover`/`nestedness`,
   `index_family`, selected `sample_labels`, original `sample_indices`, selected-site
   `richness` and `pooled_richness`. See [multiple-site beta](community.md#multiple-site-taxonomic-beta).
+- `phylobeta_multi` returns `PhylobetaMultiResult` with the three scalar components,
+  `index_family`, selected `sample_labels`, original `sample_indices`, `richness`,
+  rooted `pd` and selected-union `pooled_pd`. It also accepts `CommunityContext`.
+  See [multiple-site phylogenetic beta](community.md#multiple-site-phylogenetic-beta).
 - `phylobeta_ses` returns `PhylobetaSESResult` with site labels and richness,
   `observed`, `null_mean`, `null_sd`, `z_score`, `p_value`,
   `valid_replicates`, `pairs`, the selected family/component, and null settings.
