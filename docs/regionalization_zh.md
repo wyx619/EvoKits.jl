@@ -124,16 +124,27 @@ indicator_result.counts        # 每个区域实际返回的物种数
 `mean_dist` 按群落标签汇总多棵树的 beta 距离，返回 `MeanDistResult`。输入迭代器只遍历一次，可边计算每棵树的 beta 边汇总。所有 beta 输入须为同一种结果、同一 Sørensen/Jaccard 指数族；`component` 选择 `:total`（默认）、`:turnover` 或 `:nestedness`。
 
 ```julia
-posterior_trees = mktempdir() do dir
+using Random
+
+requested = [(1, 2), (2, 3), (2, 1)]
+posterior_analysis = mktempdir() do dir
     path = joinpath(dir, "posterior.nwk")
-    map(["((A:1,B:1):1,(C:1,D:1):1);",
-         "((A:1,B:1):2,(C:1,D:1):2);"]) do newick
-        write_tree(path, newick)
-        read_tree(path)
+    write_tree(path, "((A:1,B:1):1,(C:1,D:1):1);")
+    write_tree(path, "((C:1,D:1):2,(B:1,A:1):2);"; append = true)
+    average = read_trees(path) do trees
+        mean_dist(phylobeta(regional_data, tree) for tree in trees)
     end
+    # 两个阶段均只处理指定群落对，不生成完整矩阵。
+    selected = read_trees(path) do trees
+        mean_dist((phylobeta(regional_data, tree; pairs = requested)
+            for tree in trees); pairs = requested)
+    end
+    sampled = tree_sampler(path; n = 4, rng = MersenneTwister(42))
+    sampled_average = mean_dist(phylobeta(regional_data, tree) for tree in sampled)
+    (; average, selected, sampled, sampled_average)
 end
 
-average = mean_dist((phylobeta(regional_data, tree) for tree in posterior_trees))
+average = posterior_analysis.average
 average.distances             # 对齐后的平均距离矩阵
 average.counts                # 每个群落对的有限观测次数
 average.replicates            # 实际消费的后验树数量
@@ -142,13 +153,12 @@ context = prepare_phyloregion(average)
 select_linkage(average)
 optimal_phyloregion(context)
 
-# 两个阶段都只处理指定群落对，保留重复、反向和自配对。
-requested = [(1, 2), (2, 3), (2, 1)]
-selected = mean_dist((phylobeta(regional_data, tree; pairs = requested)
-    for tree in posterior_trees); pairs = requested)
+selected = posterior_analysis.selected
 selected.distances            # 按请求顺序返回向量
 selected.counts
 ```
+
+逐文件 burn-in、间隔保留和抽样来源见[树流与抽样](trees_zh.md#后验树流式读取与抽样)。`CommunityData` 按物种标签分别对齐每棵树，后验树的 tip 顺序可以不同。
 
 输出标签默认为首份输入的顺序，可用 `sample_labels` 显式指定完整集合。后续带标签输入可重排或缺少部分群落；未知标签、重名或空名报错。裸矩阵使用统一的输出标签顺序，维度须覆盖完整集合；各自带标签的矩阵写为 `(distances=D, sample_labels=labels)`，向量另提供自己的 `pairs`。普通距离与 beta 结果不能混合输入。
 

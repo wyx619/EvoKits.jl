@@ -20,6 +20,8 @@ export compute_aic, compute_aicc, compute_bic
 
 # Tree representation and I/O
 export CompactTree, read_tree, write_tree
+export TreeStream, read_trees
+export TreeSampleResult, tree_sampler
 
 # Tree queries, distances and clade grouping
 export mrca, descendant_tips, clade_members, subtree_at_node
@@ -120,6 +122,7 @@ include("base/criteria.jl")
 include("base/random.jl")
 include("base/tree_types.jl")
 include("base/tree_io.jl")
+include("base/tree_stream.jl")
 
 # Tree queries, operations, mapping and metrics
 include("tree/queries/validation.jl")
@@ -135,6 +138,7 @@ include("tree/operations/timeslice.jl")
 include("tree/metrics/metrics.jl")
 include("tree/metrics/shape.jl")
 include("tree/operations/phylobuilder.jl")
+include("tree/operations/tree_sampling.jl")
 
 # Trait alignment and phylogenetic signal
 include("traits/alignment.jl")

@@ -38,6 +38,54 @@ Weighted distances use branch lengths; pass `weighted = false` for edge
 counts. Tree code is grouped into queries, operations, mapping and metrics;
 see the [source layout](development.md) for file locations and dependency order.
 
+## Posterior tree streams and samples
+
+`read_trees` reads a multi-tree Newick file one tree at a time. Records end
+at semicolons and may span lines or share a line; bracket comments, rooting
+annotations and single-quoted labels are supported. Supply one path or a
+vector/tuple of paths in the desired order. `burnin` discards initial records
+and `thin` retains every nth remaining record, independently within each file.
+
+```julia
+using Random
+
+posterior_example = mktempdir() do dir
+    path = joinpath(dir, "posterior.nwk")
+    write_tree(path, "((A:1,B:1):1,(C:1,D:1):1);")
+    write_tree(path, "((C:1,D:1):2,(B:1,A:1):2);"; append = true)
+    write_tree(path, "((A:1,C:1):1,(B:1,D:1):1);"; append = true)
+    summaries = read_trees(path; burnin = 1) do trees
+        [evol_distinct(tree).scores for tree in trees]
+    end
+    sampled = tree_sampler(path; n = 2, replace = false,
+        rng = MersenneTwister(42))
+    (; summaries, sampled)
+end
+posterior_example.sampled.sample_indices
+posterior_example.sampled.source_indices
+```
+
+The returned `TreeStream` is single-pass. Exhaustion and errors close its file;
+the do-block also closes it on an early return. Close a manually managed
+stream after stopping early. Empty files yield no trees. NEXUS is unsupported.
+Retained trees require nonempty, unique tip labels; parse errors report the
+source path, original tree number and line.
+
+`tree_sampler` returns an iterable `TreeSampleResult`. It defaults to `n=100`
+with replacement, matching R's sampler; `replace=false` draws distinct records.
+Every eligible tree has equal probability, including across files of different
+lengths. Pass a seeded `rng` to reproduce Julia draws; R uses a different random
+sequence. Empty populations and excessive draws without replacement are errors.
+
+`trees`, `sample_indices`, `source_paths`, `source_indices` and `source_lines`
+follow draw order. Sample indices address the filtered population across files;
+source indices are original per-file record numbers. Repeated draws own
+independent tree arrays. Sampling scans twice and parses only chosen trees;
+unsampled records still undergo framing checks, but not structural parsing.
+Keep input files unchanged throughout reading or sampling.
+
+Pass either iterator to the [posterior mean-distance workflow](regionalization.md#mean-distances-across-posterior-trees).
+
 ## Prune and Map Trees
 
 ```julia

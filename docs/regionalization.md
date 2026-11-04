@@ -216,16 +216,27 @@ Sørensen/Jaccard family; `component` selects `:total` (default), `:turnover`, o
 `:nestedness`.
 
 ```julia
-posterior_trees = mktempdir() do dir
+using Random
+
+requested = [(1, 2), (2, 3), (2, 1)]
+posterior_analysis = mktempdir() do dir
     path = joinpath(dir, "posterior.nwk")
-    map(["((A:1,B:1):1,(C:1,D:1):1);",
-         "((A:1,B:1):2,(C:1,D:1):2);"]) do newick
-        write_tree(path, newick)
-        read_tree(path)
+    write_tree(path, "((A:1,B:1):1,(C:1,D:1):1);")
+    write_tree(path, "((C:1,D:1):2,(B:1,A:1):2);"; append = true)
+    average = read_trees(path) do trees
+        mean_dist(phylobeta(regional_data, tree) for tree in trees)
     end
+    # Compute and aggregate only the requested pairs, without full matrices.
+    selected = read_trees(path) do trees
+        mean_dist((phylobeta(regional_data, tree; pairs = requested)
+            for tree in trees); pairs = requested)
+    end
+    sampled = tree_sampler(path; n = 4, rng = MersenneTwister(42))
+    sampled_average = mean_dist(phylobeta(regional_data, tree) for tree in sampled)
+    (; average, selected, sampled, sampled_average)
 end
 
-average = mean_dist((phylobeta(regional_data, tree) for tree in posterior_trees))
+average = posterior_analysis.average
 average.distances             # symmetric mean distances
 average.counts                # finite observations per site pair
 average.replicates            # number of posterior draws consumed
@@ -234,13 +245,14 @@ context = prepare_phyloregion(average)
 select_linkage(average)
 optimal_phyloregion(context)
 
-# Compute and aggregate only these pairs, without full site-by-site matrices.
-requested = [(1, 2), (2, 3), (2, 1)]
-selected = mean_dist((phylobeta(regional_data, tree; pairs = requested)
-    for tree in posterior_trees); pairs = requested)
+selected = posterior_analysis.selected
 selected.distances            # vectors preserve request order and repetitions
 selected.counts
 ```
+
+See [tree streams and samples](trees.md#posterior-tree-streams-and-samples)
+for per-file burn-in/thinning and sampling provenance. `CommunityData` aligns
+species labels independently to each tree, even when posterior tip orders differ.
 
 Output order defaults to the first input's labels. Supply `sample_labels` to
 set a complete domain explicitly; later labeled inputs may be reordered or

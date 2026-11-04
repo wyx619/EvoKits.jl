@@ -35,6 +35,11 @@ base and tree layers load before traits and community; `phylobuilder` therefore
 works without community definitions. Dependencies between community files
 determine their load order even when they occupy different subdirectories.
 
+`base/tree_stream.jl` frames and parses multi-tree Newick records;
+`tree/operations/tree_sampling.jl` samples them in two scans, parsing only
+selected records. Both load before traits and community and have no dependency
+on the community layer.
+
 `gom.jl` exposes fixed-k mixture results and the indicator adapter;
 `gom_fit.jl` implements sparse likelihood/EM accumulation and safeguarded
 log-ratio acceleration. It uses existing Julia dependencies.

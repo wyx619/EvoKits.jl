@@ -321,6 +321,9 @@ function _phylobeta(branches, lengths, index_family, selected)
         end
     end
     return _community_beta(n, index_family, selected) do i, j
+        # Match the full matrix's lower-triangle direction. Reversed requests
+        # must agree bit-for-bit when mean_dist deduplicates source pairs.
+        i, j = max(i, j), min(i, j)
         _community_branch_components(branches[i], branches[j], lengths)
     end
 end

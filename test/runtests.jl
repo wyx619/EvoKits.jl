@@ -3,6 +3,7 @@ using EvoKits
 using DataFrames
 using Random
 
+include("tree_stream.jl")
 include("community_sparse.jl")
 include("community_context.jl")
 include("taxonomic_beta.jl")

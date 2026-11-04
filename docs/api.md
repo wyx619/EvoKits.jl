@@ -40,6 +40,15 @@ signal.k
 
 ## Public API Contract
 
+### Posterior tree input
+
+`read_trees(paths; burnin=0, thin=1)` returns a single-pass `TreeStream` of
+`CompactTree`s; its do-block closes files on early exit. `tree_sampler` returns
+an iterable `TreeSampleResult`, with independent trees and draw-order indices,
+source paths, per-file record numbers and line numbers. Filtering is per file;
+sampling is uniform across all eligible records, with replacement by default.
+See [tree input](trees.md#posterior-tree-streams-and-samples) for format and error rules.
+
 ### Shared Ordering
 
 `tree.tip_labels` is the canonical tip order. A tip position is an integer in

@@ -34,6 +34,37 @@ tree_imbalance(tree; metric = :sackin)
 
 加权距离使用枝长；设置 `weighted = false` 可改为计算边数。树源码按查询、操作、映射和指标分组，文件位置及依赖顺序见[源码组织](development_zh.md)。
 
+## 后验树流式读取与抽样
+
+`read_trees` 逐棵读取多树 Newick 文件。记录以分号结束，可以跨行或多棵共用一行；支持方括号注释、根注释和单引号标签。可传入单个路径或按所需顺序排列的路径向量/元组。`burnin` 丢弃开头记录，`thin` 在剩余记录中每隔指定棵数保留一棵，分别对每个文件应用。
+
+```julia
+using Random
+
+posterior_example = mktempdir() do dir
+    path = joinpath(dir, "posterior.nwk")
+    write_tree(path, "((A:1,B:1):1,(C:1,D:1):1);")
+    write_tree(path, "((C:1,D:1):2,(B:1,A:1):2);"; append = true)
+    write_tree(path, "((A:1,C:1):1,(B:1,D:1):1);"; append = true)
+    summaries = read_trees(path; burnin = 1) do trees
+        [evol_distinct(tree).scores for tree in trees]
+    end
+    sampled = tree_sampler(path; n = 2, replace = false,
+        rng = MersenneTwister(42))
+    (; summaries, sampled)
+end
+posterior_example.sampled.sample_indices
+posterior_example.sampled.source_indices
+```
+
+返回的 `TreeStream` 只消费一次。读完或出错会关闭文件；do-block 在提前返回时也会关闭。手动管理时需在提前停止后调用 `close`。空文件不产生树，暂不支持 NEXUS。保留的树必须具有非空且唯一的 tip 标签；解析报错包含路径、原始树序号和行号。
+
+`tree_sampler` 返回可迭代的 `TreeSampleResult`，默认 `n=100`、有放回，与 R 抽样器一致；`replace=false` 为无放回。每棵候选树等概率，文件树数不同时也不改变这一点。显式传入带种子的 `rng` 可复现 Julia 抽样，但不承诺与 R 的随机序列相同。候选总体为空、无放回数量超过总体均报错。
+
+`trees`、`sample_indices`、`source_paths`、`source_indices` 和 `source_lines` 均按抽取顺序排列。抽样索引指向跨文件筛选后的总体，来源序号指向各文件的原始记录。重复抽取的树拥有独立数组。抽样扫描两遍，仅解析抽中的树；未抽中的记录仍检查分号、引号和注释是否闭合，不检查树结构。读取或抽样期间须保持文件内容不变。
+
+两种迭代器均可接入[后验平均距离流程](regionalization_zh.md#多棵后验树的平均距离)。
+
 ## 树的修剪与映射
 
 ```julia

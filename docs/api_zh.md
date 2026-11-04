@@ -40,6 +40,10 @@ signal.k
 
 ## 公共 API 约定
 
+### 后验树输入
+
+`read_trees(paths; burnin=0, thin=1)` 返回仅消费一次、逐棵产生 `CompactTree` 的 `TreeStream`；do-block 在提前退出时也关闭文件。`tree_sampler` 返回可迭代的 `TreeSampleResult`，树相互独立，抽样索引、来源路径、文件内记录序号与行号均按抽取顺序排列。筛选分别应用于每个文件，抽样对全部候选记录等概率，默认有放回。格式及报错规则见[树输入说明](trees_zh.md#后验树流式读取与抽样)。
+
 ### 共同排序约定
 
 `tree.tip_labels` 是标准 tip 顺序。tip 位置为 `1:tree.ntips` 内的整数；紧凑节点 ID 为 `1:tree.nnodes` 内的整数。接受标签的函数通过 `tree.tipname_to_id` 查找。
