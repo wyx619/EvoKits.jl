@@ -21,7 +21,7 @@ MKL as the first loaded dependency.
 | `tree/mapping/` | Node/edge identities and R/ape numbering | [mapping.jl](../src/tree/mapping/mapping.jl) |
 | `tree/metrics/` | Evolutionary distinctiveness and tree shape | [metrics.jl](../src/tree/metrics/metrics.jl) |
 | `traits/` | Trait alignment and phylogenetic signal | [alignment.jl](../src/traits/alignment.jl) |
-| `community/core/` | Community input, branch traversal, contexts and metric adapters | [input.jl](../src/community/core/input.jl) |
+| `community/core/` | Community input, long-table export, branch traversal, contexts and metric adapters | [input.jl](../src/community/core/input.jl), [longtable.jl](../src/community/core/longtable.jl) |
 | `community/diversity/` | PD, MPD/MNTD, endemism and beta diversity | [beta.jl](../src/community/diversity/beta.jl) |
 | `community/aggregation/` | Species/lineage aggregation, functional grouping and count selection | [functional_beta.jl](../src/community/aggregation/functional_beta.jl) |
 | `community/regionalization/` | Partitions, linkage evaluation, distance means, NMDS and indicators | [regionalization.jl](../src/community/regionalization/regionalization.jl) |

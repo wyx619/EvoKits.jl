@@ -49,6 +49,9 @@ and zero used weight. Corrected SD with one matched species is NaN;
 population SD is zero.
 
 `aggregate_species` returns a new `CommunityData` whose CSC columns are groups.
+Use [`community_longtable`](community.md#export-a-long-table-and-reconstruct-the-community)
+to export grouped abundances or proportions with their complete label domains;
+the same export accepts `collapse_traits` output and `collapse_range(...).community`.
 By default entries count present species; `abundance_weighted=true` sums
 abundance and preserves numeric type (Bool becomes Int). `normalize=true`
 produces Float64 row proportions over retained groups; empty rows stay zero.

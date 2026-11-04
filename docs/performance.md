@@ -52,6 +52,19 @@ runtime. The downstream `mean_dist` generator retains no collection of beta
 matrices; full site distances still require quadratic storage, while selected
 pairs use linear storage in sites and requested pairs.
 
+## Community long-table export
+
+For n sites, p species and q positive records, `community_longtable` takes
+`O(nnz+n+p)` work for CSC input and `O(n*p+n+p)` for dense input, including
+validation. Output and temporary storage are `O(q+n+p)`. CSC input is scanned
+directly; neither a dense matrix nor an abundance-expanded occurrence table
+is created. Label domains are copied even if there are no positive records.
+
+The storage regression exports four values from a 10,000 × 50,000 CSC matrix,
+with one abundance of 1e100, against a 40 MB cumulative-allocation bound after
+compilation and a 6 MB retained-output bound. These are regression limits,
+not peak-memory or timing measurements.
+
 ## Multiple-site taxonomic beta
 
 `beta_multi` derives pairwise shared counts from species occupancy `q` as

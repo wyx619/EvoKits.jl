@@ -66,6 +66,38 @@ data = CommunityData([1, 1, 2], [1, 2, 1], [2, 1, 3];
     sample_labels=["s1", "s2"], species_labels=["A", "C"])
 ```
 
+### Export a long table and reconstruct the community
+
+`community_longtable(data)` returns a named tuple with a `table` (`DataFrame`)
+and complete `sample_labels` / `species_labels` vectors. Each positive
+site–species combination has one row, with fixed `sample`, `species`, and
+`value` columns. Records follow species-column order, then site-row order.
+Abundances and fractional weights retain their values and numeric type;
+integer counts stay in the value column. Zero entries are omitted.
+
+```julia
+using SparseArrays
+
+export_source = CommunityData(sparse([0.0 2.5 0; 0 0 0; 3 0.25 0]);
+    sample_labels=["s2", "empty", "s1"], species_labels=["C", "A", "absent"])
+records = community_longtable(export_source)
+records.table
+restored = CommunityData(records.table;
+    sample_labels=records.sample_labels, species_labels=records.species_labels)
+restored.matrix == export_source.matrix # true
+restored.sample_labels                 # ["s2", "empty", "s1"]
+restored.species_labels                # ["C", "A", "absent"]
+```
+
+Keep both label vectors with the table when saving it: nonzero records alone
+lose empty sites, all-zero species columns, and possibly site order. This also
+applies to an entirely empty table or a matrix with no rows/columns. Exported
+arrays are independent of the input. Reconstruction uses CSC storage and the
+existing long-table rules, including conversion of Bool values to integer
+counts. CSC export reads stored entries directly; see [storage costs](performance.md#community-long-table-export).
+
+### Tree alignment and metric calls
+
 Tree-based calls align species by name, fill unrepresented tree species with
 zero columns, and preserve the complete tree and its root. Unknown input
 species always cause an error. `align_community(data, tree; missing_tips=:error)`

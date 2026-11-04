@@ -52,6 +52,28 @@ data = CommunityData([1, 1, 2], [1, 2, 1], [2, 1, 3];
     sample_labels=["s1", "s2"], species_labels=["A", "C"])
 ```
 
+### 导出长表与重建群落
+
+`community_longtable(data)` 返回命名元组，包含记录表 `table`（`DataFrame`）和完整的 `sample_labels`、`species_labels` 向量。每个正值群落—物种组合对应一行，列名固定为 `sample`、`species`、`value`；先按物种列序，再按群落行序排列。丰度与小数权重保留原值和数值类型，整数丰度保存在数值列中，零值不导出。
+
+```julia
+using SparseArrays
+
+export_source = CommunityData(sparse([0.0 2.5 0; 0 0 0; 3 0.25 0]);
+    sample_labels=["s2", "empty", "s1"], species_labels=["C", "A", "absent"])
+records = community_longtable(export_source)
+records.table
+restored = CommunityData(records.table;
+    sample_labels=records.sample_labels, species_labels=records.species_labels)
+restored.matrix == export_source.matrix # true
+restored.sample_labels                 # ["s2", "empty", "s1"]
+restored.species_labels                # ["C", "A", "absent"]
+```
+
+保存记录表时须同时保存两份标签列表：只有非零记录无法保留空群落、全零物种列，也可能改变群落顺序。全零矩阵、没有行或列的矩阵同样适用。输出数组与输入独立；重建采用 CSC 存储，沿用长表的数值规则，包括将 Bool 转为整数计数。CSC 导出直接遍历存储项，[存储开销](performance_zh.md#群落长表导出)单独说明。
+
+### 树对齐与指标调用
+
 树相关调用自动按物种名对齐，为输入中没有的树物种补零列，保留完整树及根。输入中任何树外物种都会报错。`align_community(data, tree; missing_tips=:error)` 还会拒绝缺失的树物种。对齐保留稠密/CSC 存储；先显式对齐一次，后续调用可复用已对齐矩阵，预处理上下文进一步复用分支与占据统计。`CommunityData` 内部数组应视为只读；构造、显式对齐、指标结果和上下文各自拥有独立数组。
 
 现有接受群落矩阵的指标及 `prepare_community` 均支持 `CommunityData`。结果保留原行顺序，已有带标签的结果类型自动使用其群落标签。标签在构造时设置，指标调用中不再另传 `tip_labels` 或 `sample_labels`。SES 的观测与随机化使用稀疏物种集合，也支持丰度加权 MPD/MNTD；其它部分旧指标仍有稠密内部工作区。原有矩阵调用继续可用：

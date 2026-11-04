@@ -73,6 +73,14 @@ rejected by K and PIC.
 
 ### Matrix Semantics
 
+`community_longtable(data)` exports a named tuple of `table`, `sample_labels`,
+and `species_labels`. The table has one row per positive value, with `sample`,
+`species`, and `value` columns in species-then-site order. Preserve both full
+label lists when reconstructing with `CommunityData(table; sample_labels,
+species_labels)` to retain empty domains and original order. Values preserve
+abundance and numeric type; reconstruction follows long-table rules, including
+Bool-to-Int counts. See [the round-trip example](community.md#export-a-long-table-and-reconstruct-the-community).
+
 `comdist`, `comdistnt`, `unifrac`, and `phylosor` return ordinary `n x n`
 `Float64` matrices. Matrix indices follow community row order.
 

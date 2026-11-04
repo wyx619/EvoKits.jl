@@ -10,24 +10,6 @@ struct CommunityTraitResult
     corrected::Bool
 end
 
-# All kernels visit columns in input order, including CSC columns with explicit
-# zeros. No dense community, long occurrence table or membership matrix is built.
-function _community_each_positive(f, matrix::AbstractMatrix{<:Real})
-    for col in axes(matrix, 2), row in axes(matrix, 1)
-        value = matrix[row, col]
-        value > 0 && f(row, col, value)
-    end
-    return nothing
-end
-
-function _community_each_positive(f, matrix::SparseMatrixCSC{<:Real})
-    for col in axes(matrix, 2), entry in nzrange(matrix, col)
-        value = nonzeros(matrix)[entry]
-        value > 0 && f(rowvals(matrix)[entry], col, value)
-    end
-    return nothing
-end
-
 function _community_mapping(identifiers, values)
     length(identifiers) == length(values) || throw(ArgumentError("species and values must have equal lengths"))
     labels = _validated_labels(identifiers, length(identifiers), "species")

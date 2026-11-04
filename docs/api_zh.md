@@ -58,6 +58,8 @@ Newick/NEXUS 格式逐文件识别。NEXUS 的树号只统计 `TREE`/`UTREE` 定
 
 ### 矩阵语义
 
+`community_longtable(data)` 返回包含 `table`、`sample_labels`、`species_labels` 的命名元组。表的列为 `sample`、`species`、`value`，每个正值一行，先按物种列序、再按群落行序。重建时使用 `CommunityData(table; sample_labels, species_labels)` 并保留两份完整标签列表，以恢复空维度和原顺序。导出保留丰度及数值类型；重建沿用长表规则，包括 Bool 转 Int 计数。参见[往返示例](community_zh.md#导出长表与重建群落)。
+
 `comdist`、`comdistnt`、`unifrac` 和 `phylosor` 返回普通的 `n x n` `Float64` 矩阵，索引顺序与群落行顺序一致。
 
 - `comdist`：两个群落之间的平均成对距离；对角线为群落内平均距离；空群落返回 `NaN`。

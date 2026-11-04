@@ -26,9 +26,12 @@ one-based integer row/column indices into the required complete label lists.
 Duplicate coordinates are summed (`duplicates=:sum`) or rejected
 (`duplicates=:error`), including duplicates with zero values. Bool records
 are converted to integer counts. Invalid inputs and overflowing sums fail;
-stored zeros are removed from constructed CSC matrices.
+stored zeros are removed from constructed CSC matrices. Empty value columns
+retain a concrete real element type (Bool becomes Int); untyped empty columns
+use Float64.
 
-Use [`align_community`](@ref) for tree alignment, or pass the data directly to
+Use [`community_longtable`](@ref) to export nonzero records and complete label
+lists. Use [`align_community`](@ref) for tree alignment, or pass the data directly to
 community metrics and [`prepare_community`](@ref). Constructors copy their inputs;
 results and prepared contexts may be modified independently of these inputs.
 """
@@ -64,7 +67,10 @@ CommunityData(matrix::AbstractMatrix; kwargs...) =
 function _community_record_values(values)
     all(x -> x isa Real && isfinite(x) && x >= 0, values) ||
         throw(ArgumentError("community values must be finite, non-negative real numbers"))
-    isempty(values) && return Float64[]
+    if isempty(values)
+        T = eltype(values)
+        return T <: Real && isconcretetype(T) ? (T === Bool ? Int[] : T[]) : Float64[]
+    end
     # Concretize heterogeneous table columns without imposing Float64 on counts.
     T = foldl(promote_type, (x isa Bool ? Int : typeof(x) for x in values))
     result = T[x for x in values]
@@ -301,6 +307,24 @@ function _validate_community_values(community::AbstractMatrix{<:Real})
     values = community isa SparseMatrixCSC ? nonzeros(community) : community
     all(x -> isfinite(x) && x >= 0, values) ||
         throw(ArgumentError("community values must be finite and non-negative"))
+    return nothing
+end
+
+# Shared by long-table export and species/trait aggregation; visit only stored
+# entries for CSC input and skip explicit zeros without changing the matrix.
+function _community_each_positive(f, matrix::AbstractMatrix{<:Real})
+    for col in axes(matrix, 2), row in axes(matrix, 1)
+        value = matrix[row, col]
+        value > 0 && f(row, col, value)
+    end
+    return nothing
+end
+
+function _community_each_positive(f, matrix::SparseMatrixCSC{<:Real})
+    for col in axes(matrix, 2), entry in nzrange(matrix, col)
+        value = nonzeros(matrix)[entry]
+        value > 0 && f(rowvals(matrix)[entry], col, value)
+    end
     return nothing
 end
 

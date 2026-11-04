@@ -54,6 +54,7 @@ export PICResult, phylogenetic_contrasts
 
 # Community input and reusable contexts
 export CommunityData
+export community_longtable
 export align_community
 export CommunityContext, prepare_community
 
@@ -150,6 +151,7 @@ include("traits/pic.jl")
 
 # Community input, branch traversal and randomization primitives
 include("community/core/input.jl")
+include("community/core/longtable.jl")
 include("community/core/branches.jl")
 include("community/null_models/null_models.jl")
 

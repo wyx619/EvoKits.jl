@@ -31,6 +31,8 @@ beta_diss(grouped) # 分组后的 CommunityData 可直接用于分类指标
 
 `aggregate_species` 返回新的 `CommunityData`，CSC 列对应物种组。默认统计每组存在的物种数；`abundance_weighted=true` 汇总丰度并保留数值类型（Bool 转 Int）。`normalize=true` 返回各群落保留分组的 Float64 比例，空行仍为零。组名使用字符串或整数，默认按输入物种列首次出现的组排序，包含已映射零列对应的组；`group_labels` 可固定完整顺序并保留额外空组。性状表列由 `species`/`trait` 选择，分组表列由 `species`/`group` 选择。输入不会被修改，CSC 输入不展开为稠密群落矩阵或长出现记录。分组由调用者提供，物种聚类与地理绘图分别处理。
 
+[`community_longtable`](community_zh.md#导出长表与重建群落) 可导出 `aggregate_species`、`collapse_traits` 返回的群落，以及 `collapse_range(...).community`，同时保留丰度、比例和完整标签列表。
+
 ## 混合性状与功能 beta
 
 `functional_groups` 根据数值与类别性状，通过 k-prototypes 将物种分为 `k` 组；`collapse_traits` 将群落按该映射聚合；`functional_beta` 对功能组的存在/缺失计算 Sørensen 或 Jaccard beta 分解。
