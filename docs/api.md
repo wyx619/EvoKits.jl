@@ -85,10 +85,12 @@ Bool-to-Int counts. See [the round-trip example](community.md#export-a-long-tabl
 `Float64` matrices. Matrix indices follow community row order.
 
 - `comdist`: mean pairwise distance across the two communities. The diagonal
-  is within-community mean distance; an empty community gives `NaN`.
-- `comdistnt`: symmetric mean of the two directional nearest-taxon means. The
-  diagonal is the within-community nearest-taxon mean. With
-  `exclude_conspecifics=true`, a singleton diagonal is `NaN`.
+  includes zero self-distances in the within-community mean; an empty site gives `NaN`.
+- `comdistnt`: equal mean of the two directional nearest-taxon means, or a mean
+  weighted by original site totals with `abundance_weighted=true`. Nonempty
+  diagonals are zero by default. With `exclude_conspecifics=true`, diagonals
+  are within-site nearest-other-species means (a singleton gives `NaN`).
+  Exclusion uses species identity; distinct species at distance zero remain eligible.
 - `unifrac`: unweighted branch-length distance. The diagonal is zero,
   including an empty-versus-empty comparison; an empty-versus-nonempty pair is
   one when the nonempty community spans positive branch length.

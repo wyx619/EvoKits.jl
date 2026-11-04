@@ -22,7 +22,7 @@ MKL as the first loaded dependency.
 | `tree/metrics/` | Evolutionary distinctiveness and tree shape | [metrics.jl](../src/tree/metrics/metrics.jl) |
 | `traits/` | Trait alignment and phylogenetic signal | [alignment.jl](../src/traits/alignment.jl) |
 | `community/core/` | Community input, long-table export, branch traversal, contexts and metric adapters | [input.jl](../src/community/core/input.jl), [longtable.jl](../src/community/core/longtable.jl) |
-| `community/diversity/` | PD, MPD/MNTD, endemism and beta diversity | [beta.jl](../src/community/diversity/beta.jl) |
+| `community/diversity/` | PD, MPD/MNTD, community distances, endemism and beta diversity | [community_distances.jl](../src/community/diversity/community_distances.jl), [beta.jl](../src/community/diversity/beta.jl) |
 | `community/aggregation/` | Species/lineage aggregation, functional grouping and count selection | [functional_beta.jl](../src/community/aggregation/functional_beta.jl) |
 | `community/regionalization/` | Partitions, linkage evaluation, distance means, NMDS and indicators | [regionalization.jl](../src/community/regionalization/regionalization.jl) |
 | `community/null_models/` | Randomization, SES, beta SES and NRI/NTI | [ses.jl](../src/community/null_models/ses.jl) |

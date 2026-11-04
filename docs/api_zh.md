@@ -62,8 +62,8 @@ Newick/NEXUS 格式逐文件识别。NEXUS 的树号只统计 `TREE`/`UTREE` 定
 
 `comdist`、`comdistnt`、`unifrac` 和 `phylosor` 返回普通的 `n x n` `Float64` 矩阵，索引顺序与群落行顺序一致。
 
-- `comdist`：两个群落之间的平均成对距离；对角线为群落内平均距离；空群落返回 `NaN`。
-- `comdistnt`：两个方向最近分类单元平均距离的对称平均值；对角线为群落内最近分类单元平均距离。设置 `exclude_conspecifics=true` 时，单物种群落的对角线为 `NaN`。
+- `comdist`：两个群落之间的平均成对距离；对角线为包含同种零距离的群落内均值；空群落返回 `NaN`。
+- `comdistnt`：默认对两个方向的最近分类单元距离均值等权合并；`abundance_weighted=true` 时按原群落总丰度合并。默认非空对角线为零；`exclude_conspecifics=true` 时为群落内到不同物种的最近距离均值，单物种群落为 `NaN`。排除按物种身份判定，不排除不同物种之间的零距离。
 - `unifrac`：非加权枝长距离；对角线为零，包括空群落之间的比较。当非空群落跨越正枝长时，空群落与非空群落之间的距离为一。
 - `phylosor`：`2 * shared_PD / (PD1 + PD2)`；非空群落的对角线为一，空群落为零。
 

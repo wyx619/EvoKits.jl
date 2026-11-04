@@ -15,7 +15,7 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 | `tree/metrics/` | 进化独特性与树形指标 | [metrics.jl](../src/tree/metrics/metrics.jl) |
 | `traits/` | 性状对齐与系统发育信号 | [alignment.jl](../src/traits/alignment.jl) |
 | `community/core/` | 群落输入、长表导出、分支遍历、上下文与指标适配 | [input.jl](../src/community/core/input.jl)、[longtable.jl](../src/community/core/longtable.jl) |
-| `community/diversity/` | PD、MPD/MNTD、特有性及 beta 多样性 | [beta.jl](../src/community/diversity/beta.jl) |
+| `community/diversity/` | PD、MPD/MNTD、群落间距离、特有性及 beta 多样性 | [community_distances.jl](../src/community/diversity/community_distances.jl)、[beta.jl](../src/community/diversity/beta.jl) |
 | `community/aggregation/` | 物种/谱系聚合、功能分组与组数选择 | [functional_beta.jl](../src/community/aggregation/functional_beta.jl) |
 | `community/regionalization/` | 分区、连接法评估、平均距离、NMDS 与指示物种 | [regionalization.jl](../src/community/regionalization/regionalization.jl) |
 | `community/null_models/` | 随机化、SES、beta SES 与 NRI/NTI | [ses.jl](../src/community/null_models/ses.jl) |

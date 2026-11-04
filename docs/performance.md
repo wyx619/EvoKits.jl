@@ -65,6 +65,38 @@ with one abundance of 1e100, against a 40 MB cumulative-allocation bound after
 compilation and a 6 MB retained-output bound. These are regression limits,
 not peak-memory or timing measurements.
 
+## Community phylogenetic distances
+
+`comdist` processes one target community at a time. A postorder pass sums
+target weights and weighted distances below each node; a preorder pass adds
+contributions from outside each subtree. Prefix/suffix sibling sums avoid
+subtraction of nearly equal masses and long shared root paths. `comdistnt`
+propagates the two nearest distinct target identities in two passes, retaining
+an eligible alternative when excluding the source species. Row weights are
+scaled before normalization to avoid overflowing abundance sums/products.
+
+For n sites, s nonempty targets, p tips, e tree nodes and q observed site–tip
+records, CSC preparation takes `O(nnz+p+n+e)` work, followed by
+`O(s*(e+q)+n^2)` work. Dense preparation scans `n*p` values. Both functions use
+`O(q+p+n+e)` auxiliary storage plus the required `O(n^2)` output; no full
+tip-distance, tip-pair weight, site-by-branch or dense community matrix is built.
+Each target still traverses the full tree. These functions do not currently
+accept selected pairs or a prepared context.
+
+Local comparisons with the previous Julia path used balanced unit-branch trees,
+eight observed species per site, one Julia/BLAS thread and the median of three
+measurements after warm-up:
+
+| Call | Sites × tips | Previous | Current | Previous allocation | Current allocation |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Weighted `comdist` | 8 × 1,024 | 354 ms | 0.191 ms | 613 MB | 0.129 MB |
+| Weighted `comdistnt` | 24 × 2,048 | 53.3 ms | 0.613 ms | 66.5 MB | 0.166 MB |
+
+These small synthetic cases demonstrate the removed overhead; timings depend
+on tree shape, site count and occupancy. Allocations are cumulative, not peak
+memory. Separate storage regressions check 12 sites, 20,000 tips and 36 stored
+values against a 15 MB allocation bound after compilation for each function.
+
 ## Multiple-site taxonomic beta
 
 `beta_multi` derives pairwise shared counts from species occupancy `q` as

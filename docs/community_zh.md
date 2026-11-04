@@ -108,6 +108,25 @@ expected_pd(tree).expected_pd
 
 矩阵的行表示群落，列表示树的 tip。如果输入列的顺序与树 tip 顺序不同，请提供 `tip_labels`。当距离或多样性未定义时，空群落返回 `NaN`；PD、UniFrac、PhyloSor 和 RaoD 接受单物种群落。
 
+### 群落间系统发育距离
+
+`comdist` 对两个群落间的全部物种对距离求均值；对角线包含同种的零距离及不同物种间距离。默认每个存在物种等权，`abundance_weighted=true` 使用丰度权重。空群落对应的整行、整列均为 `NaN`。
+
+`comdistnt` 先分别求两个方向的最近目标物种距离均值。默认两个方向等权；`abundance_weighted=true` 时，方向内部按来源物种丰度加权，再按两个群落的原总丰度合并方向均值。没有合格目标的来源物种被跳过，其余权重重新归一化；仅一个方向有效时使用该方向，都无效时返回 `NaN`。默认非空群落的对角线为零。
+
+```julia
+distance_data = CommunityData(sparse([2.0 1 0; 0 1 3; 0 0 0]);
+    sample_labels=["west", "east", "empty"], species_labels=["A", "B", "C"])
+cross_mean = comdist(distance_data, tree; abundance_weighted=true)
+nearest = comdistnt(distance_data, tree; exclude_conspecifics=true)
+cross_mean[3, :] # [NaN, NaN, NaN]
+nearest[1, 1]   # 2.0：第一个群落内部到不同物种的最近距离
+```
+
+`exclude_conspecifics=true` 按物种身份排除同种；零长枝上的不同物种仍可具有零距离，此时单物种群落的对角线为 `NaN`。这些规则沿用现有 Julia 行为。Picante 在丰富度或总丰度不同的情况下采用不同的方向合并方式，排除同种时会排除全部零距离，并返回对角线为零的 `dist` 对象。
+
+两者接受稠密/CSC 矩阵或 `CommunityData`，保持群落顺序，要求枝长有限、非负且总和有限。输入不会修改；矩阵可通过 `tip_labels` 描述列序，`CommunityData` 则按其标签对齐。CSC 路径无需稠密群落或完整物种距离矩阵，返回值仍为完整的群落间矩阵；[算法与存储开销](performance_zh.md#群落间系统发育距离)单独说明。
+
 非丰度加权的 MPD/MNTD 使用虚拟树计算，无需为每个群落扫描大树的所有边。零模型均值和标准差使用 Welford 在线算法累计。
 
 `ses_pd`、`ses_mpd` 和 `ses_mntd` 只保留一份随机化结果及可复用的物种/树工作区，不再构建稠密“群落 × 物种”随机化缓冲区。支持 `:taxa_labels`、`:richness`、`:frequency`、`:sample_pool`、`:phylogeny_pool`、`:trialswap` 和 `:independentswap`。存储重构保留原抽样规则及基于排列的随机数消耗：richness 保留行和，frequency 保留列和，交换模型同时保留两者。现有 `:sample_pool` 与 `:richness` 一样使用完整树物种池，`:phylogeny_pool` 还会置换物种标签。丰度加权 MPD/MNTD 仍随机化存在状态，并将原丰度固定在树 tip 位置；零权重的随机物种仍作为 MNTD 最近邻候选。

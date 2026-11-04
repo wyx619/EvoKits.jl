@@ -152,6 +152,42 @@ columns are not already in tree-tip order. Empty communities return `NaN`
 where a distance or diversity value is undefined; singleton communities are
 accepted by PD, UniFrac, PhyloSor, and RaoD.
 
+### Distances between communities
+
+`comdist` averages all cross-community tip distances. Its diagonal includes
+zero self-distances as well as distances between different tips. Positive
+values supply equal species weights by default; `abundance_weighted=true`
+uses their abundances. Empty sites give `NaN` rows and columns.
+
+`comdistnt` averages the nearest-target distance in each direction. Directions
+receive equal weight by default; with `abundance_weighted=true`, source
+abundances weight each directional mean and original site totals weight the
+two means. A source tip without an eligible target is omitted and remaining
+weights are renormalized. Use the valid direction if only one exists, or
+`NaN` if neither does. Nonempty diagonals are zero by default.
+
+```julia
+distance_data = CommunityData(sparse([2.0 1 0; 0 1 3; 0 0 0]);
+    sample_labels=["west", "east", "empty"], species_labels=["A", "B", "C"])
+cross_mean = comdist(distance_data, tree; abundance_weighted=true)
+nearest = comdistnt(distance_data, tree; exclude_conspecifics=true)
+cross_mean[3, :] # [NaN, NaN, NaN]
+nearest[1, 1]   # 2.0: nearest different species within the first site
+```
+
+`exclude_conspecifics=true` excludes species identity. Different species can
+still have distance zero on zero-length branches; singleton diagonals then
+give `NaN`. These are the existing Julia conventions. Picante combines
+directional means differently when richness or site totals differ and excludes
+all zero distances; it also returns a `dist` object with zero diagonals.
+
+Both functions accept dense/CSC matrices or `CommunityData`, preserve site
+order, and require finite non-negative branch lengths with a finite sum.
+They leave inputs unchanged and support column alignment through `tip_labels`
+or `CommunityData` labels. Their CSC paths avoid a dense community and a full
+tip-distance matrix; the site-pair output is still a full matrix. See
+[algorithm and storage costs](performance.md#community-phylogenetic-distances).
+
 The non-abundance-weighted MPD/MNTD paths use a virtual-tree calculation, so a
 community query does not require scanning every edge of a large source tree.
 Null means and standard deviations are accumulated with Welford's online
