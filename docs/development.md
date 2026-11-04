@@ -7,6 +7,12 @@ public exports and loads source files in dependency order. Subdirectories group
 related code within that module; exported names and calling conventions stay
 the same.
 
+The entry file groups exports by function, with result types next to their
+functions. NRI/NTI and SES belong to null models and community structure;
+phylogenetic signal and conservation scores have separate groups. Source-loading
+sections describe dependency phases, which may span several directories. Keep
+MKL as the first loaded dependency.
+
 | Directory | Responsibility | Representative source |
 |---|---|---|
 | `base/` | Shared identifiers, tree representation, I/O and numeric helpers | [labels.jl](../src/base/labels.jl) |
