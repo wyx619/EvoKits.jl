@@ -185,4 +185,31 @@ beta 输入选择 `:total`、`:turnover` 或 `:nestedness`，功能 beta 使用�
 
 默认 `ties=:weak` 允许相等输入距离具有不同拟合值，与 vegan 默认并列含义一致；`:strong` 要求其拟合值相等。仅按精确相等分组，不使用 vegan 的绝对近似容差。零距离参与回归，不强制坐标重合。全为相等正值的距离在弱并列下可让任意坐标得到零 stress；全零输入则报错。要求 `1 <= dims < 群落数`，有解释力的 NMDS 通常需要远多于维度数的群落。NaN/Inf、非对称、非零对角线及指定对结果均报错，由调用者显式处理未定义群落。
 
-`NMDSResult` 独立保存居中、到质心 RMS 距离为一且旋转至主轴的坐标。轴方向、相同主轴对应的方向及旋转不具有固定生态学含义，输入距离单位也不决定坐标单位。`dissimilarities`、`distances`、`disparities` 分别为原输入、坐标欧氏距离、单调拟合距离，按上三角逐列 `(1,2), (1,3), (2,3), (1,4), ...` 对齐，可用于 Shepard 图。不保留“群落对 × 迭代”历史。群落对存储为二次空间；默认 PCoA 初始化另需三次时间，可用 `init=:random` 避开该分解。当前入口不包含群落变换、物种坐标、step-across、half-change 缩放及地图/颜色生成。
+`NMDSResult` 独立保存居中、到质心 RMS 距离为一且旋转至主轴的坐标。轴方向、相同主轴对应的方向及旋转不具有固定生态学含义，输入距离单位也不决定坐标单位。`dissimilarities`、`distances`、`disparities` 分别为原输入、坐标欧氏距离、单调拟合距离，按上三角逐列 `(1,2), (1,3), (2,3), (1,4), ...` 对齐，可用于 Shepard 图。不保留“群落对 × 迭代”历史。群落对存储为二次空间；默认 PCoA 初始化另需三次时间，可用 `init=:random` 避开该分解。当前入口不包含群落变换、物种坐标、step-across 及 half-change 缩放。
+
+## 坐标对齐与配色
+
+`align_nmds` 按共同标签，通过正交 Procrustes 最小二乘将已有坐标对齐到参考。默认只平移、旋转和镜像，保持源坐标距离；`scale=true` 另估计一个统一尺度，`reflection=false` 限制为不含镜像的旋转。独立返回坐标与诊断，保留原 NMDS 拟合及 stress。
+
+```julia
+reference_colors = nmds_colors(ordination)
+comparison = nmds(beta; dims = 2, nstart = 5, rng = MersenneTwister(43))
+aligned = align_nmds(comparison, ordination)
+aligned.matched_labels
+aligned.rmse                      # 参考坐标单位下的锚点距离均方根。
+
+comparison_colors = nmds_colors(aligned; scale = reference_colors.scale,
+    outside = :clip)
+comparison_colors.hex             # #RRGGBB，保留 comparison 的原始行序。
+comparison_colors.rgb             # [0,1] 范围的量化 sRGB 通道。
+comparison_colors.clipped         # 超出固定参考范围的行。
+
+regional_colors = nmds_colors(regional_ordination)
+site_colors = regional_colors.hex[phyloregion(beta; k = 3).membership]
+```
+
+对齐也可接坐标矩阵，通过 `sample_labels`、`reference_labels` 提供标签，省略时使用 `sample_1` 等默认标签。支持行重排与部分共有群落；共同群落决定变换，再应用到源坐标的全部行，保留原序。两份输入须有相同的 `d` 个轴，至少 `d+1` 个共同标签，居中锚点及其交叉乘积须满列秩；不足或秩退化时报错。`source_indices`、`reference_indices`、`rotation`、`scale`、`source_center`、`reference_center` 保存变换，`residuals`、`rmse` 描述共同锚点。不同分区结果的区域编号不自动表示同一生态实体；跨分析应使用稳定群落标签或先明确区域对应关系。
+
+`nmds_colors` 接 NMDS/对齐结果或单轴、双轴坐标矩阵，可提供矩阵的 `sample_labels`。固定色板对齐 phyloregion 的 `hexcols`：HCL 边界色、中间 sRGB 舍入、每轴 200 级索引。两轴统一使用参考中的最大跨度，保留长宽比例；颜色距离不保证等于生态差异。恒定轴映射到色板中点，单轴输入补零；单点或全部恒定的坐标获得统一中心色。只计算请求的颜色。
+
+多次比较时先对齐至共同参考，再复用其 `.scale`，保持范围和单位。仅复用范围不会对齐方向。默认拒绝超界坐标，显式 `outside=:clip` 才截断颜色坐标，并保留受影响行的标记；实际坐标不变。色板网格边界可能受浮点舍入影响。输入不修改，无 GIS、绘图或新增 Julia 依赖，输出颜色可交给绘图工具使用。

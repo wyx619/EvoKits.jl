@@ -327,5 +327,58 @@ Euclidean score and monotone fitted distances in upper-triangle column order:
 `(1,2), (1,3), (2,3), (1,4), ...`. These aligned vectors support Shepard plots.
 No pair-by-iteration history is retained. Pair storage is quadratic; PCoA
 initialization adds cubic work, which `init=:random` avoids. Community
-transformations, species scores, step-across, half-change scaling and map/color
-generation are outside this numeric interface.
+transformations, species scores, step-across and half-change scaling are
+outside this numeric interface.
+
+## Coordinate alignment and colors
+
+`align_nmds` matches shared labels and aligns an existing configuration to a
+reference using orthogonal Procrustes least squares. Translation, rotation and
+reflection preserve distances by default; `scale=true` also fits one uniform
+scale, and `reflection=false` requires a proper rotation. This returns separate
+coordinates and diagnostics, preserving the source NMDS fit and its stress.
+
+```julia
+reference_colors = nmds_colors(ordination)
+comparison = nmds(beta; dims = 2, nstart = 5, rng = MersenneTwister(43))
+aligned = align_nmds(comparison, ordination)
+aligned.matched_labels
+aligned.rmse                      # RMS anchor distance in reference units.
+
+comparison_colors = nmds_colors(aligned; scale = reference_colors.scale,
+    outside = :clip)
+comparison_colors.hex             # #RRGGBB in comparison's original row order.
+comparison_colors.rgb             # Quantized sRGB channels in [0,1].
+comparison_colors.clipped         # Rows beyond the fixed reference bounds.
+
+regional_colors = nmds_colors(regional_ordination)
+site_colors = regional_colors.hex[phyloregion(beta; k = 3).membership]
+```
+
+Both alignment inputs can instead be coordinate matrices, labeled through
+`sample_labels` and `reference_labels`; omitted matrix labels are `sample_1`,
+... . Rows may be reordered or partly overlap. Shared rows determine the
+transform, which is applied to every source row in its original order. The
+inputs must have the same number `d` of axes and at least `d+1` shared labels;
+centered anchors and their cross-product must have full column rank. Insufficient
+or rank-deficient anchors are rejected. `source_indices`, `reference_indices`,
+`rotation`, `scale`, `source_center` and `reference_center` record the fit;
+`residuals` and `rmse` describe shared anchors. Region IDs from different
+clusterings do not identify the same entities automatically; use stable site
+labels or an explicitly established region correspondence.
+
+`nmds_colors` accepts an NMDS/alignment result or a one/two-axis matrix with
+optional `sample_labels`. The fixed palette follows phyloregion `hexcols`:
+HCL boundary colors, intermediate sRGB rounding and a 200-level index on each
+axis. Both coordinate axes use the larger reference span, preserving aspect
+ratio; this visual mapping does not guarantee perceptual color distances match
+ecological distances. Constant axes map to the palette midpoint, and a one-axis
+input is padded with zero. Single points and entirely constant inputs receive
+one center color. Only requested colors are evaluated.
+
+For comparisons, align to a common reference and reuse its `.scale` to preserve
+the same bounds and units. Merely reusing bounds does not align orientations.
+Outside points raise an error unless `outside=:clip`; clipping records affected
+rows and changes only their colors. Grid boundaries can be sensitive to floating
+point rounding. No input is mutated; no GIS data, plotting library or additional
+Julia dependency is required. These colors can be passed to a plotting tool.

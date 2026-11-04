@@ -117,6 +117,11 @@ export OptimalPhyloregionResult
 export optimal_phyloregion
 export NMDSResult
 export nmds
+export NMDSAlignmentResult
+export align_nmds
+export NMDSColorScale
+export NMDSColorResult
+export nmds_colors
 export ses_pd
 export ses_pd_dataframe
 export ses_mpd
@@ -216,6 +221,8 @@ include("community/regionalization/regionalization_context.jl")
 include("community/regionalization/regionalization_selection.jl")
 include("community/regionalization/mean_dist.jl")
 include("community/regionalization/nmds.jl")
+include("community/regionalization/nmds_alignment.jl")
+include("community/regionalization/nmds_colors.jl")
 include("community/null_models/nri_nti.jl")
 include("community/null_models/ses.jl")
 include("community/null_models/beta_ses.jl")

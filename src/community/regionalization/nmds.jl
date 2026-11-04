@@ -347,7 +347,8 @@ region_distances with labels "1", "2", ... in membership-ID order; a prepared
 context ordains original site distances without rebuilding its clustering.
 Functional beta inputs use their contained beta result. Inputs are unchanged.
 This numeric core does not transform community data, fit species scores,
-apply step-across/half-change scaling, or construct maps and colors.
+apply step-across/half-change scaling, or construct maps. Use [`align_nmds`](@ref)
+and [`nmds_colors`](@ref) for separate coordinate and color postprocessing.
 """
 function nmds(distances::AbstractMatrix{<:Real}; sample_labels = nothing, kwargs...)
     labels = _validated_labels(sample_labels, size(distances, 1), "sample")

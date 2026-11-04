@@ -33,6 +33,10 @@ determine their load order even when they occupy different subdirectories.
 `gom_fit.jl` implements sparse likelihood/EM accumulation and safeguarded
 log-ratio acceleration. It uses existing Julia dependencies.
 
+`nmds_alignment.jl` matches labels and fits orthogonal Procrustes transforms;
+`nmds_colors.jl` maps coordinates to the fixed phyloregion palette and keeps
+reusable bounds. Both use existing dependencies and operate on copied scores.
+
 Keep numerical tests under `test/` and small offline reference tables under
 `test/fixtures/`. Run the affected test files and package-loading checks for
 structural changes. Local validation scripts and historical source snapshots

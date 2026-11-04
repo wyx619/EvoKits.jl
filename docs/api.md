@@ -99,6 +99,11 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
 - `nmds` returns `NMDSResult` with labels, `points`, Kruskal `stress`, packed
   input/score/fitted distances, the best start's history and stopping reason,
   and per-start stress, iteration and convergence diagnostics.
+- `align_nmds` returns `NMDSAlignmentResult` with source-order coordinates,
+  matched labels, the rotation/scale/centers, anchor residuals and RMSE.
+- `nmds_colors` returns `NMDSColorResult` with labels, two-axis `points`,
+  matching `rgb`/`hex`, a reusable `NMDSColorScale` and `clipped` flags.
+  See [alignment and colors](regionalization.md#coordinate-alignment-and-colors).
 - `fitgom` returns `GoMResult` with labeled `omega`/`theta`, hard membership,
   the NEF objective, EM residual and per-start convergence diagnostics.
   `indicators(fit)` ranks its species. See [mixed membership](regionalization.md#mixed-regional-membership).

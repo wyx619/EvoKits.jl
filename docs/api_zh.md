@@ -70,6 +70,8 @@ signal.k
 - `phylobeta` 返回 `PhylobetaResult`，包含 `sample_labels`、`total`、`turnover`、`nestedness`、`index_family` 和 `pairs`。
 - `phylobeta_ses` 返回 `PhylobetaSESResult`，包含群落标签和丰富度、`observed`、`null_mean`、`null_sd`、`z_score`、`p_value`、`valid_replicates`、`pairs`、所选指数族/成分及零模型参数。
 - `nmds` 返回 `NMDSResult`，包含标签、`points`、Kruskal `stress`、压缩的输入/坐标/拟合距离、最佳起点历史和终止原因，以及各起点的 stress、迭代数和收敛诊断。
+- `align_nmds` 返回 `NMDSAlignmentResult`，包含原群落行序的坐标、共同标签、旋转/尺度/中心、锚点残差及 RMSE。
+- `nmds_colors` 返回 `NMDSColorResult`，包含标签、双轴 `points`、对应的 `rgb`/`hex`、可复用的 `NMDSColorScale` 及 `clipped` 标记，详见[坐标对齐与配色](regionalization_zh.md#坐标对齐与配色)。
 - `fitgom` 返回 `GoMResult`，包含带标签的 `omega`/`theta`、硬归属、NEF 目标、EM 残差及各起点收敛诊断；`indicators(fit)` 筛选其物种，详见[混合归属](regionalization_zh.md#区域混合归属)。
 - `ses_pd`、`ses_mpd` 和 `ses_mntd` 返回带类型的结果，包含观测值、零模型均值和标准差、z 分数、秩 p 值、运行次数和零模型。空群落的 MPD/MNTD 为 `NaN`；单物种群落也为 `NaN`，但正质量的丰度加权 MPD 为零。
 - `psv` 返回 `PSVResult`，包含 `psv`、`richness`、`variance` 和 `scale_vcv`；少于两个分类单元的群落的 PSV 和方差为 `NaN`。`psr`、`pse`、`psc` 和 `psd` 返回命名元组，其字段为相应函数文档中的指标名称。
