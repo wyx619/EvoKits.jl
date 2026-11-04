@@ -113,16 +113,21 @@ function comdist(community::AbstractMatrix{<:Real}, tree::CompactTree;
     tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
 )
     rows = _community_distance_rows(community, tree, tip_labels, abundance_weighted)
+    return _comdist(rows, tree)
+end
+
+# RaoD reuses the prepared rows and workspace, then evaluates the pooled
+# community with the same tree traversal. No input needs to be aligned twice.
+function _comdist(rows, tree, weights = rows.weights, workspace = _ComdistWorkspace(tree.nnodes))
     n = length(rows.nodes)
     result = fill(NaN, n, n)
-    workspace = _ComdistWorkspace(tree.nnodes)
     for target in 1:n
         isempty(rows.nodes[target]) && continue
-        _comdist_target!(workspace, tree, rows.nodes[target], rows.weights[target], rows.lengths)
+        _comdist_target!(workspace, tree, rows.nodes[target], weights[target], rows.lengths)
         for source in target:n
             isempty(rows.nodes[source]) && continue
             value = 0.0
-            for (node, weight) in zip(rows.nodes[source], rows.weights[source])
+            for (node, weight) in zip(rows.nodes[source], weights[source])
                 value += weight * (workspace.down[node] + workspace.outside_distance[node])
             end
             result[source, target] = result[target, source] = value

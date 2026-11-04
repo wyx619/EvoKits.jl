@@ -1,9 +1,3 @@
-function _community_distance_inputs(community::AbstractMatrix{<:Real}, tree::CompactTree, tip_labels)
-    abundance = _community_abundance(community, tree, tip_labels)
-    distances = pairwise_distance(tree)
-    return abundance, distances
-end
-
 function _community_edge_presence(abundance::AbstractMatrix{<:Real}, tree::CompactTree)
     edge_presence = falses(size(abundance, 1), tree.nedges)
     rows = _community_tip_rows(abundance, tree, nothing)
@@ -250,50 +244,4 @@ function _community_beta(components, n, index_family, selected; total = nothing)
         end
     end
     return total, turnover, nestedness
-end
-
-Base.@kwdef struct RaoDResult
-    Dkk::Vector{Float64} = Float64[]
-    Dkl::Matrix{Float64} = zeros(Float64, 0, 0)
-    H::Matrix{Float64} = zeros(Float64, 0, 0)
-    total::Float64 = NaN
-    alpha::Float64 = NaN
-    beta::Float64 = NaN
-    Fst::Float64 = NaN
-end
-
-"""Rao's quadratic entropy and alpha/beta partition for communities."""
-function raoD(community::AbstractMatrix{<:Real}, tree::CompactTree;
-    abundance_weighted::Bool = true,
-    tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
-)
-    tip_depths = tree.dist_from_root[tree.tip_ids]
-    maximum(abs.(tip_depths .- first(tip_depths))) <= 1e-8 ||
-        throw(ArgumentError("raoD requires an ultrametric tree"))
-    abundance, distances = _community_distance_inputs(community, tree, tip_labels)
-    distances ./= 2.0
-    n = size(abundance, 1)
-    compositions = Matrix{Float64}(undef, n, tree.ntips)
-    for i in 1:n
-        weights = abundance_weighted ? copy(abundance[i, :]) : Float64.(abundance[i, :] .> 0)
-        total = sum(weights)
-        compositions[i, :] .= total > 0 ? weights ./ total : NaN
-    end
-    dkk = [sum(distances .* (compositions[i, :] * compositions[i, :]')) for i in 1:n]
-    dkl = Matrix{Float64}(undef, n, n)
-    for i in 1:n, j in 1:n
-        dkl[i, j] = sum(distances .* (compositions[i, :] * compositions[j, :]'))
-    end
-    h = copy(dkl)
-    for i in 1:n, j in 1:n
-        h[i, j] = dkl[i, j] - (dkk[i] + dkk[j]) / 2
-    end
-    totals = vec(sum(abundance, dims = 2))
-    total_abundance = sum(totals)
-    pooled = total_abundance > 0 ? vec(sum(abundance, dims = 1)) ./ total_abundance : fill(NaN, tree.ntips)
-    total = sum(distances .* (pooled * pooled'))
-    sample_weights = total_abundance > 0 ? totals ./ total_abundance : fill(NaN, n)
-    alpha = sum(dkk .* sample_weights)
-    beta = total - alpha
-    return RaoDResult(Dkk = dkk, Dkl = dkl, H = h, total = total, alpha = alpha, beta = beta, Fst = beta / total)
 end

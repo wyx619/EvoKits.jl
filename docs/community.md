@@ -143,14 +143,73 @@ psv_result.psv
 expected_pd(tree).expected_pd
 ```
 
-`raoD` returns a `RaoDResult` containing `Dkk`, `Dkl`, `H`, `alpha`, `beta`,
-and `Fst`, matching the Picante partitioning convention. It requires an
-ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
-
 Rows are communities and columns are tips. Pass `tip_labels` when input
 columns are not already in tree-tip order. Empty communities return `NaN`
 where a distance or diversity value is undefined; singleton communities are
 accepted by PD, UniFrac, PhyloSor, and RaoD.
+
+### PSV, PSR and analytical PD moments
+
+`psv` measures the mean pair contrast `(Cii+Cjj)/2-Cij`. By default C is the
+Brownian correlation matrix; `scale_vcv=false` uses covariance, so this contrast
+is patristic distance / 2. `psr` multiplies PSV by site richness. Both functions
+use tree summaries directly, including variance, and accept dense/CSC inputs
+or `CommunityData`.
+
+PSV variance now describes uniform sampling **without replacement** at the
+site's richness from all tree tips, including unobserved tips. It is zero at
+full-pool richness. This corrects the previous leaf-order-dependent formula
+shared with picante; raw-covariance variance also includes unequal tip
+variances. Empty/singleton sites give NaN, and `compute_var=false` leaves
+variance as NaN. Scaled calls require positive root-to-tip lengths.
+
+```julia
+moment_data = CommunityData(sparse([1 1 0 0; 1 1 1 1]);
+    species_labels=["A", "B", "C", "D"])
+variability = psv(moment_data, tree)
+variability.psv       # [1/2, 5/6]
+variability.variance  # [1/18, 0]
+richness_metric = psr(moment_data, tree)
+moments = expected_pd(tree; upper_bound=false)
+moments.expected_pd  # [1.875, 3.5, 4.875, 6.0]
+moments.variance_pd  # [2.3671875, 2.375, 1.2421875, 0.0]
+```
+
+`expected_pd` and its alias `pd_variance` retain a different model: every tip
+occurs **independently**, with probability `richness/tree.ntips`. Thus richness
+is the expected number present. `upper_bound=false` gives the exact Bernoulli
+variance; the default true gives picante's covariance upper bound. These are
+not fixed-size rarefaction moments. Branch lengths must be finite/nonnegative
+with a finite sum. See [algorithm and scaling](performance.md#analytical-diversity-moments).
+
+### Rao diversity partition
+
+`raoD` requires an ultrametric tree and uses patristic distance / 2, following
+Picante. Its `RaoDResult` contains within-site `Dkk`, between-site `Dkl`,
+`H[i,j] = Dkl[i,j] - (Dkk[i]+Dkk[j])/2`, pooled `total`, site-weighted `alpha`,
+`beta = total-alpha`, and `Fst = beta/total`.
+
+```julia
+rao_data = CommunityData(sparse([2.0 1 0; 0 1 3]);
+    sample_labels=["west", "east"], species_labels=["A", "B", "C"])
+rao = raoD(rao_data, tree)
+rao.Dkk           # [4/9, 3/4]
+rao.total         # 8/7
+rao.Fst           # 11/24
+raoD(rao_data, tree; abundance_weighted=false)
+```
+
+Abundance weights are the default. With `abundance_weighted=false`, species
+within each site have equal weight, while pooled composition and site weights
+still use original abundances. This existing Julia option can yield negative
+beta/Fst; Picante has no corresponding option.
+
+An empty site gives NaN Dkk and NaN Dkl/H rows and columns. It also makes
+alpha/beta/Fst NaN, even with zero site weight; total can remain finite. All-empty
+input gives NaN total. Zero input rows give empty arrays and alpha=0. Zero total
+diversity gives undefined Fst (NaN when beta is zero). Dense/CSC matrices and
+`CommunityData` share these rules and are left unchanged. See
+[algorithm and storage costs](performance.md#rao-diversity-partition).
 
 ### Distances between communities
 

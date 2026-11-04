@@ -161,10 +161,13 @@ include("community/diversity/endemism.jl")
 include("community/diversity/mpd.jl")
 include("community/diversity/mntd.jl")
 include("community/diversity/community_distances.jl")
+include("community/diversity/rao.jl")
 include("community/diversity/beta.jl")
 include("community/diversity/taxonomic_beta.jl")
 include("community/diversity/beta_multi.jl")
 include("community/diversity/phylobeta_multi.jl")
+include("community/diversity/phylogenetic_species.jl")
+include("community/diversity/expected_pd.jl")
 
 # Reusable community context and metric adapters
 include("community/core/context.jl")

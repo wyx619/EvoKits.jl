@@ -104,9 +104,45 @@ psv_result.psv
 expected_pd(tree).expected_pd
 ```
 
-`raoD` 返回 `RaoDResult`，包含 `Dkk`、`Dkl`、`H`、`alpha`、`beta` 和 `Fst`，遵循 Picante 的分解约定。它要求超度量树，并使用到最近共同祖先的距离（`patristic / 2`）。
-
 矩阵的行表示群落，列表示树的 tip。如果输入列的顺序与树 tip 顺序不同，请提供 `tip_labels`。当距离或多样性未定义时，空群落返回 `NaN`；PD、UniFrac、PhyloSor 和 RaoD 接受单物种群落。
+
+### PSV、PSR 与解析 PD 矩
+
+`psv` 是物种对差异 `(Cii+Cjj)/2-Cij` 的均值。C 默认为 Brownian 相关矩阵；`scale_vcv=false` 使用协方差，此时该差异等于 `patristic / 2`。`psr` 为 PSV 乘群落丰富度。两者直接使用树上统计量，方差也无需 VCV，接受稠密/CSC 输入和 `CommunityData`。
+
+PSV 方差现按完整树物种池在指定丰富度下**均匀无放回**抽样定义，物种池包含未观测 tip；抽取完整物种池时方差为零。修复了与原 picante 相同的叶序依赖公式，原始协方差模式也计入不同 tip 方差的贡献。空群落和单物种群落返回 `NaN`，`compute_var=false` 时方差为 `NaN`；相关矩阵模式要求根到每个 tip 的长度为正。
+
+```julia
+moment_data = CommunityData(sparse([1 1 0 0; 1 1 1 1]);
+    species_labels=["A", "B", "C", "D"])
+variability = psv(moment_data, tree)
+variability.psv       # [1/2, 5/6]
+variability.variance  # [1/18, 0]
+richness_metric = psr(moment_data, tree)
+moments = expected_pd(tree; upper_bound=false)
+moments.expected_pd  # [1.875, 3.5, 4.875, 6.0]
+moments.variance_pd  # [2.3671875, 2.375, 1.2421875, 0.0]
+```
+
+`expected_pd` 及别名 `pd_variance` 保留另一种模型：每个 tip 以 `richness/tree.ntips` 的概率**独立出现**，richness 是期望物种数。`upper_bound=false` 给出精确 Bernoulli 方差，默认 true 给出 picante 的协方差上界；并非固定样本量稀释曲线。枝长须有限、非负且总和有限；[算法与扩展性](performance_zh.md#解析多样性矩)单独说明。
+
+### Rao 多样性分解
+
+`raoD` 要求超度量树，使用 `patristic / 2`，遵循 Picante 的分解约定。返回的 `RaoDResult` 包含群落内 `Dkk`、群落间 `Dkl`、`H[i,j] = Dkl[i,j] - (Dkk[i]+Dkk[j])/2`、合并群落的 `total`、按群落权重加权的 `alpha`、`beta = total-alpha` 和 `Fst = beta/total`。
+
+```julia
+rao_data = CommunityData(sparse([2.0 1 0; 0 1 3]);
+    sample_labels=["west", "east"], species_labels=["A", "B", "C"])
+rao = raoD(rao_data, tree)
+rao.Dkk           # [4/9, 3/4]
+rao.total         # 8/7
+rao.Fst           # 11/24
+raoD(rao_data, tree; abundance_weighted=false)
+```
+
+默认按丰度加权。`abundance_weighted=false` 只将各群落内部的存在物种改为等权；合并群落的组成和群落间权重仍使用原丰度，因此 beta/Fst 可能为负。这是现有 Julia 选项，Picante 没有对应参数。
+
+空群落的 Dkk 及 Dkl/H 整行整列为 `NaN`；即使群落权重为零，也使 alpha/beta/Fst 为 `NaN`，但 total 仍可有效。全空输入的 total 为 `NaN`；零输入行返回空数组和 alpha=0。总多样性为零时 Fst 未定义，beta 也为零时返回 `NaN`。稠密/CSC 矩阵和 `CommunityData` 均遵循这些规则，输入不被修改；[算法与存储开销](performance_zh.md#rao-多样性分解)单独说明。
 
 ### 群落间系统发育距离
 

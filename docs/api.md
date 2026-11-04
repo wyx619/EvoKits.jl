@@ -98,8 +98,13 @@ Bool-to-Int counts. See [the round-trip example](community.md#export-a-long-tabl
   nonempty community and zero for an empty community.
 
 `raoD` returns `RaoDResult` with `Dkk`, `Dkl`, `H`, `total`, `alpha`, `beta`,
-and `Fst`, matching the Picante partitioning convention. It requires an
-ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
+and `Fst`. It uses `patristic / 2` and requires an ultrametric tree (absolute
+root-to-tip tolerance 1e-8), with finite non-negative branch lengths and a
+finite sum. Abundance weighting defaults to true. Setting it false changes
+within-site compositions to incidence; pooling and site weights retain original
+abundances. Empty sites propagate NaN to alpha/beta/Fst while pooled total may
+remain valid. Dkk, Dkl and H own independent arrays in input site order.
+See [Rao partition rules and example](community.md#rao-diversity-partition).
 
 ### Community Result Types
 
@@ -140,13 +145,17 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
   Empty communities have `NaN` MPD/MNTD. Singleton observations are `NaN`,
   except abundance-weighted MPD with positive mass, which is zero.
 - `psv` returns `PSVResult` with `psv`, `richness`, `variance`, and `scale_vcv`.
-  Communities with fewer than two taxa have `NaN` PSV and variance. `psr`,
-  `pse`, `psc`, and `psd` return named tuples whose field names are the metric
-  names documented by their function.
+  Variance describes uniform sampling without replacement at that richness
+  from all tree tips; full-pool variance is zero. This corrects the previous
+  leaf-order-dependent formula. Communities with fewer than two taxa have
+  `NaN` PSV and variance; `compute_var=false` leaves variance as `NaN`.
+  `psr`, `pse`, `psc`, and `psd` return named tuples whose field names are
+  the metric names documented by their function. See [PSV and PD moments](community.md#psv-psr-and-analytical-pd-moments).
 - `expected_pd` and `pd_variance` return `ExpectedPDResult`; `richness` is
-  `1:tree.ntips`, `expected_pd` is the analytical expectation, and
-  `variance_pd` is the upper-bound or exact Picante variance selected by
-  `upper_bound`.
+  `1:tree.ntips`. Every tip independently occurs with probability
+  `richness/tree.ntips`, so richness is an expected count. `expected_pd` is
+  the mean PD; `variance_pd` is the exact Bernoulli variance when
+  `upper_bound=false`, or picante's covariance upper bound by default.
 - `pd_calc(tree, tips; variant=...)` returns one scalar for a tip subset.
   Matrix input returns a named tuple with `pd`, `richness`, and normalized
   `variant`. Accepted variants are `TBL`, `MST`, `UEH`, `SBL`, and `TIP`.

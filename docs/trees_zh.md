@@ -32,7 +32,7 @@ descendant_tips(tree, tree.root; labels = true)
 tree_imbalance(tree; metric = :sackin)
 ```
 
-加权距离使用枝长；设置 `weighted = false` 可改为计算边数。树源码按查询、操作、映射和指标分组，文件位置及依赖顺序见[源码组织](development_zh.md)。
+加权距离使用枝长；设置 `weighted = false` 可改为计算边数。`distance`、`pairwise_distance` 和 `distances_to_tip` 在根深度相减会丢失精度时，累加原始分支段，保留长共有枝下的短距离。树源码按查询、操作、映射和指标分组，文件位置及依赖顺序见[源码组织](development_zh.md)。
 
 ## 后验树流式读取与抽样
 

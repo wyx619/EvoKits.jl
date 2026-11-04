@@ -35,7 +35,10 @@ tree_imbalance(tree; metric = :sackin)
 ```
 
 Weighted distances use branch lengths; pass `weighted = false` for edge
-counts. Tree code is grouped into queries, operations, mapping and metrics;
+counts. `distance`, `pairwise_distance` and `distances_to_tip` preserve short
+paths below long shared stems by summing original branch segments when
+root-depth subtraction would lose precision. Tree code is grouped into
+queries, operations, mapping and metrics;
 see the [source layout](development.md) for file locations and dependency order.
 
 ## Posterior tree streams and samples

@@ -14,6 +14,50 @@ function _tree_resolve_node(tree::CompactTree, value; by::Symbol = :tip)
     end
 end
 
+# Build weighted ancestor jumps only when a query encounters cancellation.
+# This retains logarithmic query work even on a deep comb below a long stem.
+mutable struct _TreeDistanceWorkspace
+    jumps::Matrix{Float64}
+end
+_TreeDistanceWorkspace() = _TreeDistanceWorkspace(zeros(0, 0))
+
+function _tree_distance_jumps!(workspace, tree, index)
+    jumps = Matrix{Float64}(undef, size(index.up))
+    fill!(view(jumps, 1, :), 0.0)
+    for edge in 1:tree.nedges
+        jumps[1, tree.child_of_edge[edge]] = tree.edge_length[edge]
+    end
+    for level in 2:size(jumps, 1), node in 1:tree.nnodes
+        jumps[level, node] = jumps[level - 1, node] + jumps[level - 1, index.up[level - 1, node]]
+    end
+    workspace.jumps = jumps
+    return jumps
+end
+
+# Subtract root depths only when the segment is large enough to bound loss
+# of relative precision. Otherwise accumulate original path segments via jumps.
+@inline function _tree_path_length(tree, node, ancestor, index, workspace)
+    node == ancestor && return 0.0
+    depth, shared = tree.dist_from_root[node], tree.dist_from_root[ancestor]
+    segment = depth - shared
+    if isfinite(segment) && segment > max(abs(depth), abs(shared)) / 16
+        return segment
+    end
+    jumps = isempty(workspace.jumps) ? _tree_distance_jumps!(workspace, tree, index) : workspace.jumps
+    total = 0.0
+    for level in size(index.up, 1):-1:1
+        candidate = index.up[level, node]
+        if candidate != node && _tree_is_ancestor(index, ancestor, candidate)
+            total += jumps[level, node]
+            node = candidate
+        end
+    end
+    return total
+end
+
+@inline _tree_patristic_distance(tree, a, b, ancestor, index, workspace) =
+    _tree_path_length(tree, a, ancestor, index, workspace) + _tree_path_length(tree, b, ancestor, index, workspace)
+
 function mrca(tree::CompactTree, first, second; by::Symbol = :tip)
     index = _build_tree_query_index(tree)
     return Int(_tree_lca(index, _tree_resolve_node(tree, first; by = by), _tree_resolve_node(tree, second; by = by)))
@@ -36,7 +80,7 @@ function distance(tree::CompactTree, first, second; weighted::Bool = true, by::S
     index = _build_tree_query_index(tree)
     ancestor = _tree_lca(index, first_node, second_node)
     if weighted
-        return tree.dist_from_root[Int(first_node)] + tree.dist_from_root[Int(second_node)] - 2.0 * tree.dist_from_root[Int(ancestor)]
+        return _tree_patristic_distance(tree, first_node, second_node, ancestor, index, _TreeDistanceWorkspace())
     end
     depth = zeros(Int, tree.nnodes)
     @inbounds for node in tree.preorder
@@ -53,6 +97,7 @@ function pairwise_distance(tree::CompactTree; tips = nothing, weighted::Bool = t
     n = length(values)
     nodes = [_tree_resolve_node(tree, value; by = by) for value in values]
     index = _build_tree_query_index(tree)
+    workspace = _TreeDistanceWorkspace()
     result = zeros(Float64, n, n)
     depth = if weighted
         nothing
@@ -69,7 +114,7 @@ function pairwise_distance(tree::CompactTree; tips = nothing, weighted::Bool = t
         for j in 1:(i - 1)
             ancestor = _tree_lca(index, nodes[i], nodes[j])
             result[i, j] = result[j, i] = if weighted
-                tree.dist_from_root[Int(nodes[i])] + tree.dist_from_root[Int(nodes[j])] - 2.0 * tree.dist_from_root[Int(ancestor)]
+                _tree_patristic_distance(tree, nodes[i], nodes[j], ancestor, index, workspace)
             else
                 depth[Int(nodes[i])] + depth[Int(nodes[j])] - 2 * depth[Int(ancestor)]
             end
@@ -93,12 +138,13 @@ function distances_to_tip(tree::CompactTree, focal; weighted::Bool = true, by::S
     focal_node = _tree_resolve_node(tree, focal; by = by)
     nodes = tree.tip_ids
     index = _build_tree_query_index(tree)
+    workspace = _TreeDistanceWorkspace()
     result = Vector{Float64}(undef, tree.ntips)
     depth = weighted ? nothing : distances_from_root(tree; weighted = false)
     @inbounds for (i, node) in enumerate(nodes)
         ancestor = _tree_lca(index, focal_node, node)
         result[i] = weighted ?
-            tree.dist_from_root[Int(focal_node)] + tree.dist_from_root[Int(node)] - 2.0 * tree.dist_from_root[Int(ancestor)] :
+            _tree_patristic_distance(tree, focal_node, node, ancestor, index, workspace) :
             Float64(depth[Int(focal_node)] + depth[Int(node)] - 2 * depth[Int(ancestor)])
     end
     return result

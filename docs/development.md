@@ -22,7 +22,7 @@ MKL as the first loaded dependency.
 | `tree/metrics/` | Evolutionary distinctiveness and tree shape | [metrics.jl](../src/tree/metrics/metrics.jl) |
 | `traits/` | Trait alignment and phylogenetic signal | [alignment.jl](../src/traits/alignment.jl) |
 | `community/core/` | Community input, long-table export, branch traversal, contexts and metric adapters | [input.jl](../src/community/core/input.jl), [longtable.jl](../src/community/core/longtable.jl) |
-| `community/diversity/` | PD, MPD/MNTD, community distances, endemism and beta diversity | [community_distances.jl](../src/community/diversity/community_distances.jl), [beta.jl](../src/community/diversity/beta.jl) |
+| `community/diversity/` | PD, MPD/MNTD, community distances, endemism, Rao and beta diversity | [community_distances.jl](../src/community/diversity/community_distances.jl), [rao.jl](../src/community/diversity/rao.jl), [beta.jl](../src/community/diversity/beta.jl) |
 | `community/aggregation/` | Species/lineage aggregation, functional grouping and count selection | [functional_beta.jl](../src/community/aggregation/functional_beta.jl) |
 | `community/regionalization/` | Partitions, linkage evaluation, distance means, NMDS and indicators | [regionalization.jl](../src/community/regionalization/regionalization.jl) |
 | `community/null_models/` | Randomization, SES, beta SES and NRI/NTI | [ses.jl](../src/community/null_models/ses.jl) |
@@ -48,6 +48,15 @@ log-ratio acceleration. It uses existing Julia dependencies.
 `nmds_alignment.jl` matches labels and fits orthogonal Procrustes transforms;
 `nmds_colors.jl` maps coordinates to the fixed phyloregion palette and keeps
 reusable bounds. Both use existing dependencies and operate on copied scores.
+
+`rao.jl` defines Rao entropy and its partition, reusing the prepared sparse
+rows and branch-distance workspace from `community_distances.jl`. Both load
+before `data_metrics.jl` adds the `CommunityData` adapters.
+
+`phylogenetic_species.jl` defines PSV/PSR and their finite-pool variance using
+tree summaries. `expected_pd.jl` defines analytical Bernoulli PD moments and
+edge abundance. Both load before `diversity.jl`, which retains PSE/PSC/PSD
+and PD variants/bootstrap; `data_metrics.jl` then adds the input adapters.
 
 Keep numerical tests under `test/` and small offline reference tables under
 `test/fixtures/`. Run the affected test files and package-loading checks for

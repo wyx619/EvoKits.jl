@@ -97,6 +97,101 @@ on tree shape, site count and occupancy. Allocations are cumulative, not peak
 memory. Separate storage regressions check 12 sites, 20,000 tips and 36 stored
 values against a 15 MB allocation bound after compilation for each function.
 
+## Rao diversity partition
+
+`raoD` reuses the sparse row preparation and tree workspace of `comdist` for
+`Dkl`, takes its diagonal for `Dkk`, and evaluates the pooled community once
+with the same two-pass kernel. Original abundances are scaled before pooling, so
+finite values can be used even when their raw sum would overflow. No dense
+community, full tip-distance or tip-pair weight matrix is constructed.
+
+For n sites, s nonempty sites, p tips, e tree nodes and q observed records,
+CSC preparation takes `O(nnz+p+n+e)` work, followed by
+`O(s*(e+q)+e+q+n^2)`. Auxiliary storage is `O(q+p+n+e)`; the public `Dkl`
+and `H` still require two `O(n^2)` matrices. Dense preparation scans `n*p`
+values. Each target and the pooled community traverse the full tree.
+
+Local comparisons with the previous Julia RaoD implementation used balanced
+unit-branch ultrametric trees, eight observed species per site, one Julia/BLAS
+thread and the median of three measurements after warm-up:
+
+| Weighted `raoD` | Previous | Current | Previous allocation | Current allocation |
+| --- | ---: | ---: | ---: | ---: |
+| 12 sites × 256 tips | 50.6 ms | 0.107 ms | 166 MB | 0.0512 MB |
+| 8 sites × 1,024 tips | 958 ms | 0.231 ms | 1,235 MB | 0.164 MB |
+
+These synthetic examples measure cumulative allocations, not peak memory;
+results depend on tree shape, site count and occupancy. A separate storage
+regression checks 12 sites, 20,000 tips and 36 stored values against a 15 MB
+allocation bound after compilation in both weighting modes.
+
+## Analytical diversity moments
+
+`psv` and `psr`, including `compute_var=true`, use subtree pair moments and
+rerooted tip means. Centered means/SDs avoid subtracting large nearly equal
+moments; scaled covariance uses correlation deficits to retain tiny contrasts
+below long stems. Neither full VCV/correlation matrices nor site submatrices
+are constructed. For n sites, p tips, e nodes and q observed records, CSC work
+is `O(nnz+p+n+e+n*e)`, with `O(q+p+n+e)` auxiliary storage. The full-pool
+variance is prepared once in `O(e+p)` work per call. Dense input also scans
+`n*p` values. Each site still scans the full tree, and public calls prepare
+their inputs again. PSE/PSC and the complete PSD call still use VCV.
+
+`expected_pd` / `pd_variance` replace ancestor–descendant edge-pair enumeration
+with subtree sums. The full Bernoulli richness curve takes `O(p*e)` work and
+`O(p+e)` storage, replacing `O(p*e^2)` work. Exact variance and the covariance
+upper bound use the same storage order. Probabilities are cached by descendant
+count; logarithmic tail evaluation retains representable variance terms when
+absence probabilities underflow. The distinct sampling models and corrected
+PSV variance are described in the [community guide](community.md#psv-psr-and-analytical-pd-moments).
+
+Local comparisons use balanced unit-branch trees, Julia 1.12.7, one Julia/BLAS
+thread and the median of three calls after warm-up. PSV uses eight sites with
+three presences each, scaled covariance and variance enabled; expected PD
+uses the default upper bound. Tree construction is excluded:
+
+| Call | Tips | Previous | Current | Previous allocation | Current allocation |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `expected_pd` | 256 | 84.2 ms | 0.451 ms | 1.11 MB | 0.0258 MB |
+| `psv`, including variance | 512 | 399 ms | 0.151 ms | 559 MB | 0.0924 MB |
+
+The following current-path measurements use exact expected PD variance and
+the same PSV settings. Balanced, comb and star topologies are constructed
+iteratively outside timing; the benchmark also varies site richness from
+3 to 300 and disables PSV variance in separate cases.
+
+| Call | Shape | Tips | Sites | Time | Allocation |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `expected_pd`, exact | Balanced | 256 | — | 0.560 ms | 0.0259 MB |
+| `expected_pd`, exact | Balanced | 1,024 | — | 10.5 ms | 0.100 MB |
+| `expected_pd`, exact | Balanced | 4,096 | — | 140 ms | 0.396 MB |
+| `expected_pd`, exact | Comb | 4,096 | — | 390 ms | 0.686 MB |
+| `expected_pd`, exact | Star | 4,096 | — | 64.4 ms | 0.280 MB |
+| `psv`, including variance | Balanced | 1,000 | 8 | 0.197 ms | 0.178 MB |
+| `psv`, including variance | Balanced | 10,000 | 8 | 1.95 ms | 1.76 MB |
+| `psv`, including variance | Balanced | 100,000 | 8 | 39.7 ms | 17.6 MB |
+| `psv`, including variance | Comb | 100,000 | 8 | 37.0 ms | 17.6 MB |
+| `psv`, including variance | Star | 100,000 | 8 | 18.2 ms | 9.60 MB |
+
+For the 100,000-tip balanced tree, preparing scaled tree geometry alone takes
+2.80 ms / 6.40 MB. Repeating the internal single-site mean kernel with that
+geometry and allocated workspace takes 2.88 ms / zero allocated bytes. This
+kernel excludes label preparation and full-pool variance; it is not a public
+prepared-context interface. All allocations are cumulative, not peak memory;
+timings depend on tree shape, sites, occupancy and hardware. A full 100,000-tip
+Float64 VCV alone would require 80 GB. Separate numerical/storage regressions
+use exhaustive small-tree subsets, extreme branch scales and a 20,000-tip
+sparse PSV input.
+
+## Tree distance precision
+
+Weighted tree distances use root-depth differences only when relative loss is
+bounded. Otherwise they sum original branch segments through weighted ancestor
+jumps, built on demand and reused within matrix/vector calls. Path queries
+remain `O(log e)` after indexing, including on deep combs. The ancestor index
+and optional weighted jumps use `O(e log e)` storage; full pairwise output
+still requires quadratic space in the number of requested tips.
+
 ## Multiple-site taxonomic beta
 
 `beta_multi` derives pairwise shared counts from species occupancy `q` as

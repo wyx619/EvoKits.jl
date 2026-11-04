@@ -67,7 +67,7 @@ Newick/NEXUS 格式逐文件识别。NEXUS 的树号只统计 `TREE`/`UTREE` 定
 - `unifrac`：非加权枝长距离；对角线为零，包括空群落之间的比较。当非空群落跨越正枝长时，空群落与非空群落之间的距离为一。
 - `phylosor`：`2 * shared_PD / (PD1 + PD2)`；非空群落的对角线为一，空群落为零。
 
-`raoD` 返回包含 `Dkk`、`Dkl`、`H`、`total`、`alpha`、`beta` 和 `Fst` 的 `RaoDResult`，遵循 Picante 分解约定。它要求超度量树，使用到最近共同祖先的距离（`patristic / 2`）。
+`raoD` 返回包含 `Dkk`、`Dkl`、`H`、`total`、`alpha`、`beta` 和 `Fst` 的 `RaoDResult`，使用 `patristic / 2`。树须为超度量树（根到 tip 的绝对容差 1e-8），枝长有限、非负且总和有限。丰度加权默认为 true；关闭时仅将群落内组成改为存在物种等权，合并群落及群落间权重仍按原丰度计算。空群落使 alpha/beta/Fst 为 `NaN`，但合并 total 仍可有效。Dkk、Dkl 和 H 各自拥有独立数组，按输入群落顺序排列，详见 [Rao 分解规则与示例](community_zh.md#rao-多样性分解)。
 
 ### 群落结果类型
 
@@ -84,8 +84,8 @@ Newick/NEXUS 格式逐文件识别。NEXUS 的树号只统计 `TREE`/`UTREE` 定
 - `nmds_colors` 返回 `NMDSColorResult`，包含标签、双轴 `points`、对应的 `rgb`/`hex`、可复用的 `NMDSColorScale` 及 `clipped` 标记，详见[坐标对齐与配色](regionalization_zh.md#坐标对齐与配色)。
 - `fitgom` 返回 `GoMResult`，包含带标签的 `omega`/`theta`、硬归属、NEF 目标、EM 残差及各起点收敛诊断；`indicators(fit)` 筛选其物种，详见[混合归属](regionalization_zh.md#区域混合归属)。
 - `ses_pd`、`ses_mpd` 和 `ses_mntd` 返回带类型的结果，包含观测值、零模型均值和标准差、z 分数、秩 p 值、运行次数和零模型。空群落的 MPD/MNTD 为 `NaN`；单物种群落也为 `NaN`，但正质量的丰度加权 MPD 为零。
-- `psv` 返回 `PSVResult`，包含 `psv`、`richness`、`variance` 和 `scale_vcv`；少于两个分类单元的群落的 PSV 和方差为 `NaN`。`psr`、`pse`、`psc` 和 `psd` 返回命名元组，其字段为相应函数文档中的指标名称。
-- `expected_pd` 和 `pd_variance` 返回 `ExpectedPDResult`；`richness` 为 `1:tree.ntips`，`expected_pd` 为解析期望值，`variance_pd` 为 `upper_bound` 选择的上界或精确 Picante 方差。
+- `psv` 返回 `PSVResult`，包含 `psv`、`richness`、`variance` 和 `scale_vcv`。方差对应从全部树 tips 中按该丰富度均匀无放回抽样，完整物种池的方差为零，修正了原公式的叶序依赖。少于两个分类单元的群落的 PSV 和方差为 `NaN`；`compute_var=false` 将方差留为 `NaN`。`psr`、`pse`、`psc` 和 `psd` 返回命名元组，其字段为相应函数文档中的指标名称，详见 [PSV 与 PD 矩](community_zh.md#psvpsr-与解析-pd-矩)。
+- `expected_pd` 和 `pd_variance` 返回 `ExpectedPDResult`；`richness` 为 `1:tree.ntips`。每个 tip 以 `richness/tree.ntips` 的概率独立出现，因此丰富度是期望数量。`expected_pd` 为 PD 均值；`variance_pd` 在 `upper_bound=false` 时为精确 Bernoulli 方差，默认采用 picante 的协方差上界。
 - `pd_calc(tree, tips; variant=...)` 为 tip 子集返回一个标量；矩阵输入返回包含 `pd`、`richness` 和规范化 `variant` 的命名元组。支持 `TBL`、`MST`、`UEH`、`SBL` 和 `TIP`。
 - `pd_bootstrap(tree, ntips; ...)` 返回重复计算得到的标量向量；`pd_bootstrap(community, tree; ...)` 返回包含 `observed`、`replicates` 和 `richness` 的 `PDBootstrapResult`。
 
