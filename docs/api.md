@@ -47,6 +47,8 @@ signal.k
 an iterable `TreeSampleResult`, with independent trees and draw-order indices,
 source paths, per-file record numbers and line numbers. Filtering is per file;
 sampling is uniform across all eligible records, with replacement by default.
+Newick/NEXUS detection is per file. NEXUS indices count only `TREE`/`UTREE`
+definitions; translation tables apply within their own `TREES` block.
 See [tree input](trees.md#posterior-tree-streams-and-samples) for format and error rules.
 
 ### Shared Ordering

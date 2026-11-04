@@ -37,14 +37,16 @@ after a warm-up.
 
 ## Posterior tree input
 
-`read_trees` scans once, retaining the current record and parsed tree plus
-source paths. `tree_sampler` scans input twice, parses only selected records,
+`read_trees` scans once, retaining the current command/record and parsed tree
+plus source paths and the current NEXUS translation table. Metadata storage
+does not grow with the number of trees; skipped blocks are framed command by
+command. `tree_sampler` scans input twice, parses only selected records,
 and retains O(n) draw metadata plus sampled trees. Without-replacement indices
 use a partial Fisher-Yates shuffle over a dictionary, with no array sized to
 the posterior population. Repeated draws are parsed once and copied.
 
 Storage regressions check a stream after 2,000 records, three sampled trees
-from 5,000 records, and eight distinct indices from a population of 10^12.
+from 5,000 records in Newick and NEXUS, and eight distinct indices from a population of 10^12.
 These bound retained objects/index allocations, not peak process memory or
 runtime. The downstream `mean_dist` generator retains no collection of beta
 matrices; full site distances still require quadratic storage, while selected

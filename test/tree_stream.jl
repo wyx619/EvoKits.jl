@@ -73,6 +73,13 @@ end
         standalone = collect(read_trees(path))
         @test standalone[1].ntips == 1 && standalone[1].tip_labels == ["single"]
         @test standalone[2].tip_labels == ["single;quoted"]
+        write(path,"((A:1,B:2)95:3,C:4)0.9;")
+        labeled = only(collect(read_trees(path)))
+        @test "95" in labeled.node_labels && labeled.node_labels[labeled.root] == "0.9"
+        write(path,"(A:1,B:2)'root, name'; (A:2,B:3)Root;")
+        labeled = collect(read_trees(path))
+        @test labeled[1].node_labels[labeled[1].root] == "root, name"
+        @test labeled[2].node_labels[labeled[2].root] == "Root"
     end
 end
 
@@ -129,9 +136,9 @@ end
         end
         write(path,"(A:1,B:1)")
         @test_throws ArgumentError collect(read_trees(path;burnin=20))
-        # Burn-in/thinning cannot turn a NEXUS container into Newick records.
+        # NEXUS burn-in counts TREE definitions, not BEGIN/END commands.
         write(path,"#NEXUS\nBEGIN TREES;\nTREE one = (A:1,B:1);\nEND;")
-        @test_throws ArgumentError collect(read_trees(path;burnin=2))
+        @test isempty(collect(read_trees(path;burnin=2)))
         @test_throws ArgumentError tree_sampler(path;n=1,burnin=2)
     end
 end

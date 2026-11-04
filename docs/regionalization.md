@@ -253,6 +253,7 @@ selected.counts
 See [tree streams and samples](trees.md#posterior-tree-streams-and-samples)
 for per-file burn-in/thinning and sampling provenance. `CommunityData` aligns
 species labels independently to each tree, even when posterior tip orders differ.
+The same calls accept NEXUS posterior files and apply their `TRANSLATE` tables.
 
 Output order defaults to the first input's labels. Supply `sample_labels` to
 set a complete domain explicitly; later labeled inputs may be reordered or

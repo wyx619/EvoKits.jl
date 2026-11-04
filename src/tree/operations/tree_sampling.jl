@@ -4,7 +4,8 @@
 Iterable sample from [`tree_sampler`](@ref). `trees`, `sample_indices`,
 `source_paths`, `source_indices` and `source_lines` follow random draw order.
 Sample indices address the eligible population concatenated across files;
-source indices are original one-based record numbers within each file.
+source indices count original one-based tree definitions within each file
+(NEXUS metadata commands do not count).
 `population_size` counts eligible records; `replace`, `burnin` and `thin`
 record the sampling options. Trees and metadata arrays are independently owned.
 """
@@ -52,7 +53,7 @@ end
 """
     tree_sampler(paths; n=100, replace=true, burnin=0, thin=1, rng=Random.default_rng())
 
-Sample posterior trees uniformly from one or several Newick files, returning
+Sample posterior trees uniformly from Newick and/or NEXUS files, returning
 an iterable `TreeSampleResult`. `paths`, record syntax, and per-file burn-in /
 thinning follow [`read_trees`](@ref). Each eligible tree has equal probability,
 including when files contain different numbers of trees. The default draws
@@ -66,13 +67,14 @@ once then copied, so modifying one does not change another. Provenance retains
 the original file, record number, line, and eligible-population index.
 
 Two sequential scans avoid storing all records: the first counts eligible
-records and checks framing; the second parses only sampled records. Structural
+records and checks framing and NEXUS commands/tables; the second parses only
+sampled records. Structural
 or branch-token errors in unsampled/burned/thinned records are not parsed.
 Unterminated records, quotes and comments still fail during scanning. All
 files must remain unchanged between scans; size/time and population changes
 are checked. File handles close on completion or failure.
 
-Memory is O(n + current record + returned trees), plus source paths; sampling
+Memory is O(n + current record + current translation table + returned trees), plus source paths; sampling
 without replacement does not allocate a vector the size of the population.
 Pass the result to a generator such as
 `mean_dist(phylobeta(data, tree) for tree in sample)` to accumulate distances

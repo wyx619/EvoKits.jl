@@ -4,6 +4,7 @@ using DataFrames
 using Random
 
 include("tree_stream.jl")
+include("tree_nexus.jl")
 include("community_sparse.jl")
 include("community_context.jl")
 include("taxonomic_beta.jl")

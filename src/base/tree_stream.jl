@@ -2,8 +2,8 @@
     TreeStream
 
 Single-pass, closeable iterator of `CompactTree`s created by [`read_trees`](@ref).
-It owns at most one open file and one Newick record at a time. Use the do-block
-form of `read_trees` when iteration may stop early.
+It owns at most one open file, one record and the current NEXUS translation
+table at a time. Use the do-block form when iteration may stop early.
 """
 mutable struct TreeStream
     paths::Vector{String}
@@ -14,6 +14,8 @@ mutable struct TreeStream
     record_index::Int
     line::Int
     closed::Bool
+    format::Symbol
+    nexus::_NexusTreeState
 end
 
 Base.IteratorSize(::Type{TreeStream}) = Base.SizeUnknown()
@@ -24,6 +26,7 @@ function Base.close(stream::TreeStream)
     stream.io === nothing || close(stream.io)
     stream.io = nothing
     stream.closed = true
+    _nexus_reset!(stream.nexus)
     return nothing
 end
 
@@ -37,7 +40,7 @@ function _tree_stream_paths(input)
     paths = input isa AbstractString ? [input] : input
     paths isa Union{AbstractVector, Tuple} && !isempty(paths) &&
         all(path -> path isa AbstractString, paths) ||
-        throw(ArgumentError("supply a Newick file path or a nonempty vector/tuple of file paths"))
+        throw(ArgumentError("supply a tree file path or a nonempty vector/tuple of file paths"))
     result = String[abspath(path) for path in paths]
     all(isfile, result) || throw(ArgumentError("every tree path must name an existing file"))
     identities = Sys.iswindows() ? lowercase.(realpath.(result)) : realpath.(result)
@@ -49,17 +52,26 @@ end
     read_trees(paths; burnin=0, thin=1)
     read_trees(f, paths; burnin=0, thin=1)
 
-Read semicolon-terminated Newick records one at a time, returning a `TreeStream`
-of `CompactTree`s. Supply a file path or a nonempty vector/tuple of paths;
-files are concatenated in the supplied order. Repeated file paths are errors.
+Read Newick or NEXUS trees one at a time, returning a `TreeStream` of
+`CompactTree`s. Detect NEXUS from a leading #NEXUS header, independently for
+each file. Supply a path or a nonempty vector/tuple of paths; files are
+concatenated in the supplied order. Repeated file paths are errors.
 Records may share a line or span lines. Whitespace, an initial UTF-8 BOM,
 square-bracket comments (including rooting annotations), and single-quoted
-labels with doubled quote escapes are supported. NEXUS containers are rejected.
+labels with doubled quote escapes are supported. In NEXUS, read TREE/UTREE
+definitions from TREES blocks, applying each block's optional TRANSLATE table
+to tip labels only. Keys and taxon labels must be unique; every retained tip
+must occur in a provided table. Tables must precede trees and cannot repeat
+within a block. Without a table, tip labels are literal; TAXA label indices
+and LINK commands are not resolved. Other blocks are skipped. Tree names,
+comments and annotations are discarded; rooting markers do not reroot trees.
 
-In each file, discard the first `burnin` records, then retain records
+In each file, count only tree definitions, discard the first `burnin`, then retain trees
 `burnin+1`, `burnin+1+thin`, ... . Empty files yield no trees. Framing errors
 such as unterminated records, quotes or comments fail, also in skipped records;
-tree syntax is parsed only for retained records. Errors include file, original
+NEXUS command/table validation also applies to skipped trees; Newick syntax
+and tip translation are parsed only for retained trees. Every NEXUS block
+must end with END/ENDBLOCK. Errors include file, original
 one-based tree number and line. Missing branch lengths remain undefined as in
 `read_tree`; downstream metrics apply their own branch-length requirements.
 
@@ -73,7 +85,8 @@ function read_trees(paths; burnin=0, thin=1)
     files = _tree_stream_paths(paths)
     discarded = _tree_stream_integer(burnin, "burnin", 0)
     stride = _tree_stream_integer(thin, "thin", 1)
-    stream = TreeStream(files, discarded, stride, 0, nothing, 0, 1, false)
+    stream = TreeStream(files, discarded, stride, 0, nothing, 0, 1, false,
+        :unknown, _NexusTreeState())
     finalizer(close, stream)
     return stream
 end
@@ -89,7 +102,8 @@ end
 
 function _tree_stream_error(stream, line, message)
     path = stream.paths[stream.file_index]
-    return ArgumentError("Newick file $path, tree $(stream.record_index+1), line $line: $message")
+    format = stream.format === :nexus ? "NEXUS" : "Newick"
+    return ArgumentError("$format file $path, tree $(stream.record_index+1), line $line: $message")
 end
 
 function _tree_stream_open_next!(stream)
@@ -102,6 +116,8 @@ function _tree_stream_open_next!(stream)
     end
     stream.io = open(stream.paths[stream.file_index], "r")
     stream.record_index, stream.line = 0, 1
+    stream.format = :unknown
+    _nexus_reset!(stream.nexus)
     return true
 end
 
@@ -111,6 +127,7 @@ function _tree_stream_record!(stream)
     buffer = IOBuffer()
     quoted, comments, started = false, 0, false
     start_line = stream.line
+    possible_header = false
     while !eof(stream.io)
         at_start = position(stream.io) == 0
         c = read(stream.io, Char)
@@ -124,6 +141,7 @@ function _tree_stream_record!(stream)
         end
         if !quoted && c == '['
             comments = 1
+            stream.format === :nexus && started && write(buffer, ' ')
             started || (start_line = line)
             continue
         end
@@ -131,8 +149,20 @@ function _tree_stream_record!(stream)
         if !started
             isspace(c) && continue
             started, start_line = true, line
+            possible_header = stream.format === :unknown && c == '#'
         end
         write(buffer, c)
+        # The NEXUS signature has no semicolon. Return it separately without
+        # buffering the first block command or losing its source line.
+        if possible_header && position(buffer) == 6
+            prefix = String(take!(buffer))
+            if uppercase(prefix) == "#NEXUS" &&
+                (eof(stream.io) || isspace(peek(stream.io, Char)) || peek(stream.io, Char) == '[')
+                return (text=prefix, line=start_line)
+            end
+            write(buffer, prefix)
+            possible_header = false
+        end
         c == '\'' && (quoted = !quoted)
         !quoted && c == ';' && return (text=String(take!(buffer)), line=start_line)
     end
@@ -148,28 +178,49 @@ function _next_tree_record!(stream)
         stream.io === nothing && !_tree_stream_open_next!(stream) && return nothing
         record = _tree_stream_record!(stream)
         if record === nothing
+            isempty(stream.nexus.block) || throw(_tree_stream_error(stream,
+                stream.nexus.block_line, "unterminated NEXUS $(stream.nexus.block) block; expected END;"))
             _tree_stream_open_next!(stream) || return nothing
             continue
         end
-        stream.record_index == 0 && occursin(r"^#NEXUS"i, record.text) && throw(_tree_stream_error(
-            stream, record.line, "NEXUS input is unsupported; export trees as Newick"))
+        if stream.format === :unknown
+            if ncodeunits(record.text) == 6 && uppercase(record.text) == "#NEXUS"
+                stream.format = :nexus
+                continue
+            end
+            stream.format = :newick
+        end
+        if stream.format === :nexus
+            record = try
+                _nexus_tree_record!(stream, record)
+            catch error
+                error isa InterruptException && rethrow()
+                throw(_tree_stream_error(stream, record.line, first(sprint(showerror, error), 240)))
+            end
+            record === nothing && continue
+        else
+            record = (; record..., translation=nothing)
+        end
         stream.record_index += 1
         index = stream.record_index
         if index > stream.burnin && (index - stream.burnin - 1) % stream.thin == 0
-            return (; record.text, path=stream.paths[stream.file_index], index, record.line)
+            return (; record.text, path=stream.paths[stream.file_index], index, record.line,
+                record.translation, format=stream.format)
         end
     end
 end
 
 # Validate Newick structure before invoking the permissive dependency parser.
-# Replace quoted labels by collision-free plain tokens and restore them after
-# parsing; the dependency itself does not decode quoted Newick labels.
+# Replace quoted/numeric internal labels by plain tokens. The dependency does
+# not decode quotes and stores numeric node labels as support values instead.
+# It also drops root data, so retain the root label separately.
 function _tree_stream_normalize(text)
     prefix = "__EVOKITS_QUOTED_"
     while occursin(prefix, text)
         prefix *= "_"
     end
     labels = Dict{String, String}()
+    root_label = ""
     output, token = IOBuffer(), IOBuffer()
     index, depth, state = firstindex(text), 0, :subtree
     delimiters = ('(', ')', ',', ':', ';')
@@ -233,6 +284,8 @@ function _tree_stream_normalize(text)
         end
         value = String(take!(token))
         quoted || (value = strip(value))
+        numeric_internal = state === :internal && tryparse(Float64, value) !== nothing
+        state === :internal && depth == 0 && (root_label = value)
         if state === :length
             !quoted && tryparse(Float64, value) !== nothing || throw(ArgumentError("invalid branch length"))
             state = :after_length
@@ -242,7 +295,7 @@ function _tree_stream_normalize(text)
         else
             throw(ArgumentError("unexpected text after node label or branch length"))
         end
-        if quoted
+        if quoted || numeric_internal
             placeholder = prefix * string(length(labels) + 1)
             labels[placeholder] = value
             value = placeholder
@@ -250,12 +303,12 @@ function _tree_stream_normalize(text)
         write(output, value)
     end
     state === :done || throw(ArgumentError("incomplete Newick record"))
-    return String(take!(output)), labels
+    return String(take!(output)), labels, root_label
 end
 
 function _parse_tree_record(record)
     try
-        newick, labels = _tree_stream_normalize(record.text)
+        newick, labels, root_label = _tree_stream_normalize(record.text)
         node = if startswith(newick, '(')
             NewickTree.readnw(newick, UInt32)
         else
@@ -268,6 +321,17 @@ function _parse_tree_record(record)
             for names in (tree.node_labels, tree.tip_labels), i in eachindex(names)
                 names[i] = get(labels, names[i], names[i])
             end
+        end
+        isempty(root_label) || (tree.node_labels[tree.root] = root_label)
+        if record.translation !== nothing
+            for i in eachindex(tree.tip_labels)
+                name = tree.tip_labels[i]
+                haskey(record.translation, name) || throw(ArgumentError("tip missing from TRANSLATE table: $name"))
+                tree.tip_labels[i] = record.translation[name]
+                tree.node_labels[tree.tip_ids[i]] = tree.tip_labels[i]
+            end
+        end
+        if !isempty(labels) || record.translation !== nothing
             empty!(tree.tipname_to_id)
             for i in eachindex(tree.tip_labels)
                 tree.tipname_to_id[tree.tip_labels[i]] = tree.tip_ids[i]
@@ -278,7 +342,8 @@ function _parse_tree_record(record)
     catch error
         error isa InterruptException && rethrow()
         message = first(sprint(showerror, error), 240)
-        throw(ArgumentError("Newick file $(record.path), tree $(record.index), line $(record.line): $message"))
+        format = record.format === :nexus ? "NEXUS" : "Newick"
+        throw(ArgumentError("$format file $(record.path), tree $(record.index), line $(record.line): $message"))
     end
 end
 

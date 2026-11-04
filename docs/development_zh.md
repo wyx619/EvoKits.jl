@@ -23,7 +23,7 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 
 共用标签校验位于 `base/labels.jl`：将非空字符串或整数标识符转换为唯一字符串标签，沿用已有默认标签与报错规则。树补全与群落输入使用同一套辅助函数。base 和 tree 先于 traits、community 加载，因此 `phylobuilder` 可在群落定义加载前独立使用。群落文件之间的依赖决定加载顺序，同一子目录的文件不要求连续加载。
 
-`base/tree_stream.jl` 切分并解析多树 Newick 记录，`tree/operations/tree_sampling.jl` 通过两遍扫描抽样，仅解析抽中的记录。两者均先于 traits 和 community 加载，不依赖群落层。
+`base/tree_stream.jl` 切分记录并解析 Newick 树体，`base/tree_nexus.jl` 处理 NEXUS 块、命令和叶标签翻译，`tree/operations/tree_sampling.jl` 通过两遍扫描抽样，仅解析抽中的记录。这些文件均先于 traits 和 community 加载，不依赖群落层。
 
 `gom.jl` 提供固定 k 混合归属结果及指示物种适配，`gom_fit.jl` 实现稀疏似然/EM 累计和有目标上升保护的对数比加速，使用现有 Julia 依赖。
 

@@ -40,11 +40,12 @@ see the [source layout](development.md) for file locations and dependency order.
 
 ## Posterior tree streams and samples
 
-`read_trees` reads a multi-tree Newick file one tree at a time. Records end
+`read_trees` reads Newick or NEXUS files one tree at a time, detecting each
+file's format from its contents. Newick records end
 at semicolons and may span lines or share a line; bracket comments, rooting
 annotations and single-quoted labels are supported. Supply one path or a
 vector/tuple of paths in the desired order. `burnin` discards initial records
-and `thin` retains every nth remaining record, independently within each file.
+and `thin` retains every nth remaining tree, independently within each file.
 
 ```julia
 using Random
@@ -67,7 +68,7 @@ posterior_example.sampled.source_indices
 
 The returned `TreeStream` is single-pass. Exhaustion and errors close its file;
 the do-block also closes it on an early return. Close a manually managed
-stream after stopping early. Empty files yield no trees. NEXUS is unsupported.
+stream after stopping early. Empty files yield no trees.
 Retained trees require nonempty, unique tip labels; parse errors report the
 source path, original tree number and line.
 
@@ -79,10 +80,50 @@ sequence. Empty populations and excessive draws without replacement are errors.
 
 `trees`, `sample_indices`, `source_paths`, `source_indices` and `source_lines`
 follow draw order. Sample indices address the filtered population across files;
-source indices are original per-file record numbers. Repeated draws own
+source indices are original per-file tree numbers. Repeated draws own
 independent tree arrays. Sampling scans twice and parses only chosen trees;
 unsampled records still undergo framing checks, but not structural parsing.
 Keep input files unchanged throughout reading or sampling.
+
+### NEXUS posterior files
+
+A leading `#NEXUS` header selects NEXUS parsing, regardless of the filename
+extension. `TREE` and `UTREE` definitions in all `TREES` blocks are read in
+file order. `TRANSLATE` applies only to tips in its own block; internal numeric
+labels and root labels are preserved. Tree names and bracket annotations,
+including `[&R]` and `[&U]`, are discarded; the written topology is not rerooted.
+
+```julia
+nexus_example = mktempdir() do dir
+    path = joinpath(dir, "posterior.trees")
+    write(path, """
+    #NEXUS
+    BEGIN TREES;
+      TRANSLATE 1 A, 2 B, 3 C;
+      TREE STATE_0 = [&R] ((1:1,2:2):3,3:4);
+      TREE STATE_100 = [&R] ((3:3,1:2):1,2:5);
+    END;
+    """)
+    data = CommunityData(sparse([1 1 0; 1 0 1; 0 1 1]);
+        species_labels = ["C", "A", "B"])
+    average = read_trees(path) do trees
+        mean_dist(phylobeta(data, tree) for tree in trees)
+    end
+    sampled = tree_sampler(path; n = 2, replace = false,
+        rng = MersenneTwister(42))
+    (; average, sampled, regions = phyloregion(average; k = 2))
+end
+```
+
+Filtering and `source_indices` count tree definitions across the file's blocks;
+metadata commands do not count. `source_lines` points to each `TREE`/`UTREE`
+command. Newick and NEXUS paths may be mixed. Tables must precede trees, have
+unique keys and taxon labels, and appear at most once per block. Each retained
+tip must match a table key; without a table, labels remain literal. Labels are
+not renamed, and `TAXA` indices/`LINK` are not resolved (`LINK` is rejected).
+Other blocks are skipped, and every block must end with `END` or `ENDBLOCK`.
+Command/table validation applies even during burn-in and sampling's counting
+scan; tree syntax and tip translation are checked only for parsed trees.
 
 Pass either iterator to the [posterior mean-distance workflow](regionalization.md#mean-distances-across-posterior-trees).
 

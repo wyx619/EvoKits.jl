@@ -122,6 +122,7 @@ include("base/criteria.jl")
 include("base/random.jl")
 include("base/tree_types.jl")
 include("base/tree_io.jl")
+include("base/tree_nexus.jl")
 include("base/tree_stream.jl")
 
 # Tree queries, operations, mapping and metrics

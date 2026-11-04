@@ -36,7 +36,7 @@ tree_imbalance(tree; metric = :sackin)
 
 ## 后验树流式读取与抽样
 
-`read_trees` 逐棵读取多树 Newick 文件。记录以分号结束，可以跨行或多棵共用一行；支持方括号注释、根注释和单引号标签。可传入单个路径或按所需顺序排列的路径向量/元组。`burnin` 丢弃开头记录，`thin` 在剩余记录中每隔指定棵数保留一棵，分别对每个文件应用。
+`read_trees` 逐棵读取 Newick 或 NEXUS 文件，按各文件内容识别格式。Newick 记录以分号结束，可以跨行或多棵共用一行；支持方括号注释、根注释和单引号标签。可传入单个路径或按所需顺序排列的路径向量/元组。`burnin` 丢弃开头的树，`thin` 在剩余树中每隔指定棵数保留一棵，分别对每个文件应用。
 
 ```julia
 using Random
@@ -57,11 +57,39 @@ posterior_example.sampled.sample_indices
 posterior_example.sampled.source_indices
 ```
 
-返回的 `TreeStream` 只消费一次。读完或出错会关闭文件；do-block 在提前返回时也会关闭。手动管理时需在提前停止后调用 `close`。空文件不产生树，暂不支持 NEXUS。保留的树必须具有非空且唯一的 tip 标签；解析报错包含路径、原始树序号和行号。
+返回的 `TreeStream` 只消费一次。读完或出错会关闭文件；do-block 在提前返回时也会关闭。手动管理时需在提前停止后调用 `close`。空文件不产生树。保留的树必须具有非空且唯一的 tip 标签；解析报错包含路径、原始树序号和行号。
 
 `tree_sampler` 返回可迭代的 `TreeSampleResult`，默认 `n=100`、有放回，与 R 抽样器一致；`replace=false` 为无放回。每棵候选树等概率，文件树数不同时也不改变这一点。显式传入带种子的 `rng` 可复现 Julia 抽样，但不承诺与 R 的随机序列相同。候选总体为空、无放回数量超过总体均报错。
 
-`trees`、`sample_indices`、`source_paths`、`source_indices` 和 `source_lines` 均按抽取顺序排列。抽样索引指向跨文件筛选后的总体，来源序号指向各文件的原始记录。重复抽取的树拥有独立数组。抽样扫描两遍，仅解析抽中的树；未抽中的记录仍检查分号、引号和注释是否闭合，不检查树结构。读取或抽样期间须保持文件内容不变。
+`trees`、`sample_indices`、`source_paths`、`source_indices` 和 `source_lines` 均按抽取顺序排列。抽样索引指向跨文件筛选后的总体，来源序号指向各文件的原始树号。重复抽取的树拥有独立数组。抽样扫描两遍，仅解析抽中的树；未抽中的记录仍检查分号、引号和注释是否闭合，不检查树结构。读取或抽样期间须保持文件内容不变。
+
+### NEXUS 后验树文件
+
+开头的 `#NEXUS` 标记启用 NEXUS 解析，不依赖扩展名。按文件顺序读取所有 `TREES` 块中的 `TREE`、`UTREE` 定义；`TRANSLATE` 只替换其所在块的叶标签，数字内部节点标签及根标签会保留。树名称及方括号注释会丢弃，包括 `[&R]`、`[&U]`；不根据这些标记重新定根。
+
+```julia
+nexus_example = mktempdir() do dir
+    path = joinpath(dir, "posterior.trees")
+    write(path, """
+    #NEXUS
+    BEGIN TREES;
+      TRANSLATE 1 A, 2 B, 3 C;
+      TREE STATE_0 = [&R] ((1:1,2:2):3,3:4);
+      TREE STATE_100 = [&R] ((3:3,1:2):1,2:5);
+    END;
+    """)
+    data = CommunityData(sparse([1 1 0; 1 0 1; 0 1 1]);
+        species_labels = ["C", "A", "B"])
+    average = read_trees(path) do trees
+        mean_dist(phylobeta(data, tree) for tree in trees)
+    end
+    sampled = tree_sampler(path; n = 2, replace = false,
+        rng = MersenneTwister(42))
+    (; average, sampled, regions = phyloregion(average; k = 2))
+end
+```
+
+筛选与 `source_indices` 对同一文件跨块累计树号，不计元数据命令；`source_lines` 指向 `TREE`/`UTREE` 命令行。可混合传入 Newick 和 NEXUS 路径。每块至多一份翻译表，必须位于树定义前，键与物种名均须唯一；保留树的每个叶标签都须匹配表键。没有表时按字面标签读取，不自动改名，也不解析 `TAXA` 编号或 `LINK`（后者明确报错）。其他块跳过，每块必须用 `END` 或 `ENDBLOCK` 结束。burn-in 和抽样计数阶段仍校验命令与翻译表；只对实际解析的树校验 Newick 结构和叶标签映射。
 
 两种迭代器均可接入[后验平均距离流程](regionalization_zh.md#多棵后验树的平均距离)。
 
