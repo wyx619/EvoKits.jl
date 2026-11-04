@@ -93,6 +93,9 @@ ultrametric tree and uses distance-to-MRCA (`patristic / 2`).
   and `positive_branch_count`.
 - `phylobeta` returns `PhylobetaResult` with `sample_labels`, `total`,
   `turnover`, `nestedness`, `index_family`, and `pairs`.
+- `beta_multi` returns `BetaMultiResult` with scalar `total`/`turnover`/`nestedness`,
+  `index_family`, selected `sample_labels`, original `sample_indices`, selected-site
+  `richness` and `pooled_richness`. See [multiple-site beta](community.md#multiple-site-taxonomic-beta).
 - `phylobeta_ses` returns `PhylobetaSESResult` with site labels and richness,
   `observed`, `null_mean`, `null_sd`, `z_score`, `p_value`,
   `valid_replicates`, `pairs`, the selected family/component, and null settings.

@@ -205,6 +205,32 @@ second_batch = phylobeta(ctx; index_family = :jaccard, pairs = [(2, 1)])
 
 原矩阵、树或标签后续发生变化时，上下文仍使用准备时的快照；分析新数据需要重新准备。可以独立修改返回结果；上下文内部数组应视为只读。准备过程会保留分支集合及汇总值，因此有一次性的时间和内存成本，适合同一数据的重复分析。上下文不保留原始树和矩阵，也不缓存完整群落间矩阵；完整矩阵调用仍执行两两计算并分配输出，指定群落对调用仅分配请求的结果。
 
+## 多群落分类 beta
+
+`beta_multi` 按多群落 Sørensen 或 Jaccard 定义，返回所选群落整体的标量 `total`、`turnover` 和 `nestedness`。
+
+```julia
+collection = CommunityData(sparse([1 1 1 0; 1 0 0 1; 1 0 0 0]);
+    sample_labels = ["s1", "s2", "s3"], species_labels = ["A", "B", "C", "D"])
+overall = beta_multi(collection)
+overall.total             # 3/5
+overall.turnover          # 1/3
+overall.nestedness        # 4/15
+overall.richness          # [3, 2, 1]
+overall.pooled_richness   # 4
+
+subset = beta_multi(collection; samples = ["s3", "s1"], index_family = :jaccard)
+subset.sample_labels      # ["s3", "s1"]
+subset.sample_indices     # [3, 1]，对应原始输入行
+subset.pooled_richness    # 3，基于所选群落重新计数
+```
+
+支持稠密/CSC 矩阵和 `CommunityData`，所有正值均按存在处理，丰度大小不参与加权。矩阵标签通过 `sample_labels` 设置，须唯一且非空，默认生成 `sample_1` 等标签。`samples` 接受由不同整数行号或字符串标签组成的向量、元组，并保留请求顺序；整数标签会转成字符串，按标签选择时应传字符串。不接受 Bool 掩码、重复群落或行号与标签混合的选择。输入数值整体校验，包括未选行。结果独立保存标签、原始行号及所选群落的丰富度。
+
+令 A 为所选群落丰富度之和减去合并物种数，M/X 为全部无序群落对独有物种数的最小值/最大值之和。Sørensen 总差异为 `(M+X)/(2A+M+X)`，替代为 `M/(A+M)`；Jaccard 总差异为 `(M+X)/(A+M+X)`，替代为 `2M/(A+2M)`。嵌套采用等价的乘积公式保留很小的数值。这些是整体指标，对 `beta_diss` 的元素求均值得到的是另一个统计量。
+
+至少选择两个群落。空群落保留，全部为空或零物种列时三项均为 `NaN`。只有一个非空群落时，总差异为一，替代与嵌套为 `NaN`；无共享物种且至少两个非空群落时，总差异和替代为一、嵌套为零。其余情况按各成分的分母判断。输入不修改，也不构造完整两两距离矩阵；算法说明见[性能专题](performance_zh.md#多群落分类-beta)。
+
 ## 系统发育 beta SES
 
 `phylobeta_ses` 复用现有 SES 的稀疏随机化和在线统计，对一个系统发育 beta 成分计算标准化效应量。每次选择 `:sorensen` 或 `:jaccard`，以及 `:total`、`:turnover` 或 `:nestedness` 之一。

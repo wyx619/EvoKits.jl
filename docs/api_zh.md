@@ -68,6 +68,7 @@ signal.k
 - `phylo_endemism` 返回 `PhyloEndemismResult`，包含 `sample_labels`、`pe`、`richness`、按树的边顺序排列的 `branch_occupancy` 和 `weighted`。
 - `relative_pd` 返回 `RelativePDResult`，包含 `sample_labels`、`rpd`、`pd_normalized`、`pd_equal_normalized`、`richness`、`total_branch_length` 和 `positive_branch_count`。
 - `phylobeta` 返回 `PhylobetaResult`，包含 `sample_labels`、`total`、`turnover`、`nestedness`、`index_family` 和 `pairs`。
+- `beta_multi` 返回 `BetaMultiResult`，包含标量 `total`/`turnover`/`nestedness`、`index_family`、所选 `sample_labels`、原始行号 `sample_indices`、所选群落 `richness` 和合并物种数 `pooled_richness`，详见[多群落分类 beta](community_zh.md#多群落分类-beta)。
 - `phylobeta_ses` 返回 `PhylobetaSESResult`，包含群落标签和丰富度、`observed`、`null_mean`、`null_sd`、`z_score`、`p_value`、`valid_replicates`、`pairs`、所选指数族/成分及零模型参数。
 - `nmds` 返回 `NMDSResult`，包含标签、`points`、Kruskal `stress`、压缩的输入/坐标/拟合距离、最佳起点历史和终止原因，以及各起点的 stress、迭代数和收敛诊断。
 - `align_nmds` 返回 `NMDSAlignmentResult`，包含原群落行序的坐标、共同标签、旋转/尺度/中心、锚点残差及 RMSE。

@@ -6,6 +6,7 @@ using Random
 include("community_sparse.jl")
 include("community_context.jl")
 include("taxonomic_beta.jl")
+include("beta_multi.jl")
 include("community_input.jl")
 include("ses_sparse.jl")
 include("community_aggregation.jl")

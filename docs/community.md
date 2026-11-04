@@ -318,6 +318,50 @@ intended for reuse. It does not retain the input tree or matrix, or cache full
 pairwise matrices. Full matrix calls still perform pairwise calculations and
 allocate their outputs; selected-pair calls allocate only requested results.
 
+## Multiple-site taxonomic beta
+
+`beta_multi` summarizes a selected collection with scalar `total`, `turnover`
+and `nestedness`, using the multiple-site Sørensen or Jaccard definition.
+
+```julia
+collection = CommunityData(sparse([1 1 1 0; 1 0 0 1; 1 0 0 0]);
+    sample_labels = ["s1", "s2", "s3"], species_labels = ["A", "B", "C", "D"])
+overall = beta_multi(collection)
+overall.total             # 3/5
+overall.turnover          # 1/3
+overall.nestedness        # 4/15
+overall.richness          # [3, 2, 1]
+overall.pooled_richness   # 4
+
+subset = beta_multi(collection; samples = ["s3", "s1"], index_family = :jaccard)
+subset.sample_labels      # ["s3", "s1"]
+subset.sample_indices     # [3, 1], original input rows
+subset.pooled_richness    # 3, counted within the selected collection
+```
+
+Dense/CSC matrices and `CommunityData` are accepted. All positive values denote
+presence; abundance magnitudes do not weight the index. Matrix labels are set
+through `sample_labels`, must be unique and nonempty, and default to
+`sample_1`, ... . `samples` accepts a vector or tuple of distinct row indices
+or string labels, preserving request order. Integer label identifiers become
+strings; select those labels as strings. Bool masks and mixed index/label
+selectors are rejected. All input values are validated, including excluded rows.
+The result owns its labels, original row indices and selected-site richness.
+
+With A equal to summed site richness minus pooled richness, and M/X the sums
+of minimum/maximum unique counts across unordered site pairs, Sørensen total
+is `(M+X)/(2A+M+X)` and turnover is `M/(A+M)`. Jaccard total is
+`(M+X)/(A+M+X)` and turnover is `2M/(A+2M)`. Nestedness uses the equivalent
+defining product to retain small values. These are collection-level indices;
+averaging `beta_diss` entries gives a different statistic.
+
+At least two selected sites are required. Empty sites remain in the collection;
+all-empty or zero-column input yields three `NaN`s. With exactly one nonempty
+site, total is one and turnover/nestedness are `NaN`. With no shared species
+and at least two nonempty sites, total and turnover are one and nestedness zero.
+Other cases follow their component denominators. No input is modified and no
+full pairwise matrix is built; see the [algorithm notes](performance.md#multiple-site-taxonomic-beta).
+
 ## Phylogenetic beta SES
 
 `phylobeta_ses` standardizes one phylogenetic beta component against a null

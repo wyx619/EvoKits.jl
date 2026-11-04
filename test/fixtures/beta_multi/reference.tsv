@@ -1,0 +1,9 @@
+"case"	"n"	"p"	"matrix"	"family"	"total"	"turnover"	"nestedness"	"pooled_richness"
+"mixed"	3	4	"1,1,1,1,0,0,1,0,0,0,1,0"	"sorensen"	0.6	0.333333333333333	0.266666666666667	4
+"mixed"	3	4	"1,1,1,1,0,0,1,0,0,0,1,0"	"jaccard"	0.75	0.5	0.25	4
+"nested"	3	3	"1,1,1,1,1,0,1,0,0"	"sorensen"	0.4	0	0.4	3
+"nested"	3	3	"1,1,1,1,1,0,1,0,0"	"jaccard"	0.571428571428571	0	0.571428571428571	3
+"one_empty"	2	2	"0,1,0,1"	"sorensen"	1	NaN	NaN	2
+"one_empty"	2	2	"0,1,0,1"	"jaccard"	1	NaN	NaN	2
+"all_empty"	3	2	"0,0,0,0,0,0"	"sorensen"	NaN	NaN	NaN	0
+"all_empty"	3	2	"0,0,0,0,0,0"	"jaccard"	NaN	NaN	NaN	0

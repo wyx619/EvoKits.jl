@@ -34,3 +34,18 @@ pd(sample, tree)
 
 Measurements use balanced rooted trees with unit branch lengths on Julia 1.12.7
 after a warm-up.
+
+## Multiple-site taxonomic beta
+
+`beta_multi` derives pairwise shared counts from species occupancy `q` as
+`sum(q*(q-1)/2)`. Sorting selected-site richness supplies the sums of pairwise
+minima and maxima; subtracting shared counts gives the required unique-count
+sums. Counts and cancellation use `Int128`, with conversion to `Float64` at
+the final ratios. Neither pair enumeration nor a site-pair matrix is needed.
+
+For n input sites, p species and m selected sites, CSC work is
+`O(nnz + p + n + m log m)` and auxiliary storage is `O(n+p)`; the full input is
+validated even for a subset. Dense input takes `O(n*p + m log m)` work.
+The storage regression checks a 6,000 × 40,000 CSC collection against an
+8 MB cumulative-allocation bound after compilation. This is a regression bound,
+not peak-memory or runtime benchmark evidence. No new timing benchmark was run.

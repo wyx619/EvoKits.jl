@@ -76,6 +76,8 @@ export beta_diss
 export CommunityContext
 export prepare_community
 export CommunityData
+export BetaMultiResult
+export beta_multi
 export align_community
 export CommunityTraitResult
 export map_trait
@@ -204,6 +206,7 @@ include("community/diversity/mpd.jl")
 include("community/diversity/mntd.jl")
 include("community/diversity/beta.jl")
 include("community/diversity/taxonomic_beta.jl")
+include("community/diversity/beta_multi.jl")
 include("community/core/context.jl")
 include("community/diversity/diversity.jl")
 include("community/core/data_metrics.jl")

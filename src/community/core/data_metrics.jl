@@ -27,6 +27,12 @@ function beta_diss(data::CommunityData; kwargs...)
     return beta_diss(data.matrix; sample_labels = data.sample_labels, kwargs...)
 end
 
+function beta_multi(data::CommunityData; kwargs...)
+    _community_data_keywords(kwargs)
+    _validate_community_data(data)
+    return beta_multi(data.matrix; sample_labels = data.sample_labels, kwargs...)
+end
+
 # These existing result types carry site labels. Alignment retains the full
 # tree, supplies zero columns for unrepresented tips, and owns its arrays.
 for metric in (:pd, :pd_dataframe, :phylo_endemism, :relative_pd, :phylobeta,
