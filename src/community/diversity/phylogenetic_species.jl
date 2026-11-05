@@ -149,6 +149,8 @@ Phylogenetic species variability in input site order. Positive values denote
 presence. Uses Brownian correlation by default, or raw covariance with
 `scale_vcv=false`, without constructing VCV or site submatrices. Empty and
 singleton sites give NaN. Scaled calls require positive root-to-tip lengths.
+Sparse sites reuse observed connecting trees and site workspaces; dense sites
+keep sequential tree traversal. PSR uses the same preparation through PSV.
 
 Variance is exact for uniform sampling without replacement at each site's
 richness from ALL tree tips, including unobserved tips. A full pool has zero
@@ -164,8 +166,18 @@ function psv(community::AbstractMatrix{<:Real}, tree::CompactTree;
     _validate_community_branch_lengths(tree)
     rows = _community_tip_rows(community, tree, tip_labels)
     geometry = _psv_geometry(tree, scale_vcv)
-    counts, means, sds = zeros(Int, tree.nnodes), zeros(tree.nnodes), zeros(tree.nnodes)
-    return _psv_values(rows, tree, geometry, counts, means, sds; compute_var)
+    plan = _species_plan(rows, tree, geometry)
+    if plan.index === nothing && plan.tree isa CompactTree
+        # Keep the existing dense route, sharing its full-pool variance scratch
+        # with site moments instead of allocating a second full workspace.
+        counts, means, sds = zeros(Int, tree.nnodes), zeros(tree.nnodes), zeros(tree.nnodes)
+        return _psv_values(rows, tree, geometry, counts, means, sds; compute_var)
+    end
+    # Compression serves site means only. Unobserved and singleton-only tips
+    # remain in the original finite population used to calculate variance.
+    variance_by_richness = compute_var ? _psv_variances(tree, geometry,
+        zeros(Int, tree.nnodes), zeros(tree.nnodes), zeros(tree.nnodes)) : Float64[]
+    return _species_psv_values(rows, plan, variance_by_richness)
 end
 
 function _psv_values(rows, tree, geometry, counts, means, sds; compute_var)

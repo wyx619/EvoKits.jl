@@ -270,6 +270,28 @@ function _species_site!(workspace, plan, tips)
     return topology, local_geometry, workspace.tips
 end
 
+# Richness belongs to the original input records: the plan omits singleton
+# tips from its working topology because their means are undefined. Variance
+# has already been prepared on the complete original tree, never this plan.
+function _species_psv_values(rows, plan, variance_by_richness)
+    n = length(rows)
+    values, variances = fill(NaN, n), fill(NaN, n)
+    richness = length.(rows)
+    site_workspace = _SpeciesSiteWorkspace(plan.index === nothing ? 0 : plan.tree.nnodes)
+    counts, means, scratch = Int[], Float64[], Float64[]
+    for (site, tips) in enumerate(plan.rows)
+        length(tips) > 1 || continue
+        tree, geometry, tips = _species_site!(site_workspace, plan, tips)
+        resize!(counts, tree.nnodes)
+        resize!(means, tree.nnodes)
+        # Mean-only moments never read the central-variance scratch vector.
+        value, _ = _psv_moments!(tree, tips, geometry, counts, means, scratch)
+        values[site] = geometry.scaled ? value : value / 2
+        !isempty(variance_by_richness) && (variances[site] = variance_by_richness[richness[site]])
+    end
+    return PSVResult(psv = values, richness = richness, variance = variances, scale_vcv = plan.geometry.scaled)
+end
+
 function _species_pse_values(rows, plan)
     if plan.index === nothing && plan.tree isa CompactTree
         return _pse_values(rows, plan.tree, plan.geometry, zeros(plan.tree.nnodes), zeros(plan.tree.nnodes))

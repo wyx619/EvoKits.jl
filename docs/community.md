@@ -225,11 +225,14 @@ diversity.psc         # [1/2, 1/2]
 pse(sparse([2.0 1 0 0]), tree).pse  # [4/9]
 ```
 
-PSE/PSC use observed connecting trees for sparse data, retaining the original
-root contribution to correlation and raw covariance. PSD shares each site's
-tree across PSV, PSE and PSC; its variance still samples from all original
-tree tips, including unobserved species. Dense cases keep sequential tree
-traversal. See [costs and measurements](performance.md#pse-psc-and-shared-psd).
+PSV/PSR and PSE/PSC use observed connecting trees for sparse data, retaining
+the original root contribution to correlation and raw covariance. Standalone
+PSV evaluates only variability; PSR derives its value from that path. PSD
+shares each site's tree across PSV, PSE and PSC. PSV/PSR variance, including
+the corresponding PSD outputs, still uses all original tree tips, including
+unobserved and singleton-only species. Dense cases keep sequential tree traversal. See
+[PSV/PSR costs](performance.md#psvpsr-connecting-trees) and
+[shared PSD measurements](performance.md#pse-psc-and-shared-psd).
 
 `pse` weights pair contrasts by relative abundance; `psc` averages each
 present species' smallest `1-Cij` to another species. In raw covariance mode

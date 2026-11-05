@@ -367,12 +367,12 @@ rerooted tip means. Centered means/SDs avoid subtracting large nearly equal
 moments; scaled covariance uses correlation deficits to retain tiny contrasts
 below long stems. Neither full VCV/correlation matrices nor site submatrices
 are constructed by PSV/PSR/PSE/PSC/PSD. For n sites, p tips, e nodes and q
-observed records, aligned CSC work
-is `O(nnz+p+n+e+n*e)`, with `O(q+p+n+e)` auxiliary storage. The full-pool
-variance is prepared once in `O(e+p)` work per call. Dense input also scans
-`n*p` values. Each site still scans the full tree, and public calls prepare
-their inputs again. Permuted labels additionally sort per-site presence
-records for PSV/PSR/PSC; weighted PSE/PSD preparation needs no such sort.
+observed records, the full sequential route takes `O(nnz+p+n+e+n*e)` work,
+with `O(q+p+n+e)` auxiliary storage. Sparse sites now use connecting trees as
+described below. The full-pool variance is prepared once in `O(e+p)` work per
+call. Dense input also scans `n*p` values, and public calls prepare their
+inputs again. Permuted labels additionally sort per-site presence records
+for PSV/PSR/PSC; weighted PSE/PSD preparation needs no such sort.
 
 `pse` accumulates weighted cross-subtree contrasts instead of subtracting a
 quadratic form from a weighted trace. Abundances are scaled before summation;
@@ -405,7 +405,7 @@ uses the default upper bound. Tree construction is excluded:
 | `expected_pd` | 256 | 84.2 ms | 0.451 ms | 1.11 MB | 0.0258 MB |
 | `psv`, including variance | 512 | 399 ms | 0.151 ms | 559 MB | 0.0924 MB |
 
-The following current-path measurements use exact expected PD variance and
+The following earlier measurements use exact expected PD variance and
 the same PSV settings. Balanced, comb and star topologies are constructed
 iteratively outside timing; the benchmark also varies site richness from
 3 to 300 and disables PSV variance in separate cases.
@@ -431,7 +431,63 @@ prepared-context interface. All allocations are cumulative, not peak memory;
 timings depend on tree shape, sites, occupancy and hardware. A full 100,000-tip
 Float64 VCV alone would require 80 GB. Separate numerical/storage regressions
 use exhaustive small-tree subsets, extreme branch scales and a 20,000-tip
-sparse PSV input.
+sparse PSV input. These PSV timings predate the connecting-tree route below.
+
+### PSV/PSR connecting trees
+
+Standalone PSV now reuses the observed-tree plan and site index already used
+by PSD; PSR calls the same PSV path. A site selected for local extraction is
+evaluated on at most `2r-1` nodes for richness r. The original records determine richness even
+when singleton-only species are omitted from the working tree. Optional
+variance is still calculated once on the complete original tree, including
+unobserved tips. Dense calls keep their sequential kernel and reuse its
+full-pool variance scratch for site means. Neither path computes unused PSD metrics.
+
+Aligned CSC preparation costs `O(nnz+p+n+e)`, including geometry and observed
+tree compression. Auxiliary storage stays `O(q+p+n+e)`. In a v-node working
+tree, site extraction costs `O(r log r+r log² v)` and mean evaluation `O(r)`;
+sites that do not qualify use `O(v+r)` sequential moments. The existing policy
+uses a site index at v≥256 and `2r-1<=v/32`; whole-collection compression also
+depends on observed occupancy. Full-pool variance adds `O(e+p)` work/storage
+once. Dense inputs scan `n*p` values; permuted labels also sort each site's
+presence records. No VCV, binary ancestor table or public context is added.
+
+These comparisons use the preceding full-tree PSV, Julia 1.12.7, one
+Julia/BLAS thread and warmed medians of three serial runs. Each tree has
+100,000 unit-branch tips; 64 CSC sites each contain three species. Scaled
+covariance is enabled. Public calls include validation, all preparation and
+result allocation; tree construction is excluded.
+
+| Shape | Variance | Full tree | Connecting trees | Previous allocated | Current allocated |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Balanced | Off | 156 ms | 5.61 ms | 12.01 MB | 8.19 MB |
+| Balanced | On | 170 ms | 18.75 ms | 17.61 MB | 18.59 MB |
+| Comb | Off | 190 ms | 6.83 ms | 12.01 MB | 8.19 MB |
+| Comb | On | 208 ms | 22.12 ms | 17.61 MB | 18.59 MB |
+| Star | Off | 80.6 ms | 2.94 ms | 6.41 MB | 4.49 MB |
+| Star | On | 85.5 ms | 9.29 ms | 9.61 MB | 10.09 MB |
+
+PSR on the balanced input changes from 158 to 5.69 ms without variance and
+171 to 18.79 ms with variance. Full-pool variance remains a material cost;
+its original workspace plus compression makes cumulative allocation slightly
+higher when enabled. Internal balanced-tree preparation without variance
+takes 5.76 ms / 8.13 MB and retains a 383-node plan plus records of 77.1 KB.
+With that plan prepared, all 64 means take 57.4 μs / 55.0 KB. Full-pool
+variance alone takes 15.0 ms / 10.40 MB with geometry already prepared.
+The prepared mean and variance timings exclude input validation; these
+internal stages are not an exposed reuse API.
+
+The grid also covers 1,000/10,000 tips, raw covariance and richness
+3/30/300/4,096. A 4,096-tip balanced tree with every species observed across
+2,048 two-species sites still benefits: variance-enabled PSV takes
+63.7→1.18 ms, allocating 0.952→3.07 MB. The global tree stays full, but each
+site has three nodes; its index adds linear storage. Dense/intermediate
+occupancy was rechecked with three alternating batches of 16 calls:
+4,096-tip fully occupied PSV without variance takes balanced
+0.792→0.767 ms, comb 0.745→0.776 ms and star 0.362→0.360 ms. Initial isolated
+timing outliers were not used to claim a dense speedup. Allocation rises by
+about 1.0–1.6 KB for strategy selection in these cases. All allocation figures
+are cumulative, not peak memory, and standalone calls still repeat preparation.
 
 ### PSE, PSC and shared PSD
 

@@ -39,6 +39,6 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 
 [mean_beta.jl](../src/community/regionalization/mean_beta.jl) 在 `mean_dist.jl` 后加载，增加群落数据与树迭代器的直接累计方法，复用既有 beta 公式和均值累计函数。后验树缓冲区不放入单树上下文；完整输出把稀疏分支成员乘积直接累计到一个可复用列块，指定请求只保留端点记录并去重无序对。
 
-[species_virtual.jl](../src/community/diversity/species_virtual.jl) 在观测物种连接树上保留原始高度及有方向的仿射路径变换，再用线性空间的重链索引为稀疏 PSE/PSC 提取更小的群落树。PSD 为每个群落只建一次连接树，共用 PSV/PSE/PSC 计算；方差单独在完整原树上计算。稠密调用保留顺序遍历，准备结果及工作区均为私有实现。
+[species_virtual.jl](../src/community/diversity/species_virtual.jl) 在观测物种连接树上保留原始高度及有方向的仿射路径变换，再用线性空间的重链索引为稀疏 PSV/PSR/PSE/PSC 提取更小的群落树。`_species_psv_values` 只求 PSV 矩，保留原始记录的丰富度，方差使用完整原树物种池的预计算结果；PSR 调用 PSV。PSD 为每个群落只建一次连接树，共用 PSV/PSE/PSC 计算。稠密调用保留顺序遍历，并复用完整池方差工作数组，准备结果及工作区均为私有实现。
 
 数值测试继续放在 `test/`，小型离线参考表放在 `test/fixtures/`。结构调整采用相关测试文件和包加载检查。本地验收脚本、历史源码快照保存在受 Git 忽略的 `validation/`；历史 `git show` 命令中的路径对应原提交的目录结构。

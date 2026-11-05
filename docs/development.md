@@ -75,9 +75,11 @@ It reuses the distinct-target workspace from `community_distances.jl`.
 [species_virtual.jl](../src/community/diversity/species_virtual.jl) contracts
 observed connecting trees while retaining original heights and ordered affine
 path transforms. A linear-space heavy-path index builds smaller site trees
-for sparse PSE/PSC queries. PSD builds each site tree once for PSV/PSE/PSC;
-variance is computed separately on the complete original tree. Dense calls
-keep sequential traversal. These plans and workspaces are private.
+for sparse PSV/PSR/PSE/PSC queries. `_species_psv_values` evaluates only PSV
+moments, keeps richness from the original records, and uses variance prepared
+on the complete original tree; PSR calls PSV. PSD builds each site tree once
+for PSV/PSE/PSC. Dense calls keep sequential traversal and reuse their
+full-pool variance scratch for site moments. These plans and workspaces are private.
 
 `expected_pd.jl` defines analytical Bernoulli PD moments and edge abundance.
 These kernels load before [pd_workspace.jl](../src/community/diversity/pd_workspace.jl),
