@@ -264,7 +264,7 @@ end
 
 """
     comdistnt(community, tree; abundance_weighted=false,
-              exclude_conspecifics=false, tip_labels=nothing)
+              exclude_conspecifics=false, pairs=nothing, tip_labels=nothing)
     comdistnt(data::CommunityData, tree; kwargs...)
 
 Symmetric mean of the two directional nearest-taxon distances. Matrix rows
@@ -280,17 +280,37 @@ within-site nearest-other-species mean (NaN for a singleton). With the default
 setting, nonempty diagonals are zero. Empty sites give NaN. Branch lengths
 must be finite and non-negative with a finite sum.
 
-Two tree passes per nonempty target propagate the nearest two distinct target
-species, without building a full tip-distance matrix or dense community. CSC
-input is traversed directly; output is an ordinary symmetric Float64 matrix
-in site order. Neither the community nor the tree is mutated.
+Returns a symmetric Float64 matrix in site order by default. With `pairs`,
+returns a Float64 vector in request order, retaining repeated, reversed and
+self pairs. An empty request gives an empty vector. All values, labels and
+branch lengths are validated, including unrequested sites.
+
+Two tree passes per needed target propagate the nearest two distinct target
+species, using a compressed connecting tree when occupancy is low. Original
+branches are summed on contracted paths, preserving species identity and
+short distances below long shared stems. CSC input is traversed directly;
+selected computation retains requested endpoints only. No full tip-distance
+matrix or dense community is built. Inputs are not mutated.
 """
 function comdistnt(community::AbstractMatrix{<:Real}, tree::CompactTree;
     abundance_weighted::Bool = false,
     exclude_conspecifics::Bool = false,
+    pairs = nothing,
     tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
 )
-    rows = _community_distance_rows(community, tree, tip_labels, abundance_weighted)
+    selected = _community_pairs(pairs, size(community, 1))
+    active_sites = selected === nothing ? nothing : falses(size(community, 1))
+    if selected !== nothing
+        for (i, j) in selected
+            active_sites[i] = active_sites[j] = true
+        end
+    end
+    rows = _community_distance_rows(community, tree, tip_labels, abundance_weighted;
+        active_sites, need_lengths = false)
+    return _comdistnt_adaptive(rows, tree, selected, abundance_weighted, exclude_conspecifics)
+end
+
+function _comdistnt(rows, tree, weighted, exclude)
     n = length(rows.nodes)
     result = fill(NaN, n, n)
     workspace = _ComdistntWorkspace(tree.nnodes)
@@ -299,12 +319,12 @@ function comdistnt(community::AbstractMatrix{<:Real}, tree::CompactTree;
         _comdistnt_target!(workspace, tree, rows.nodes[target], rows.lengths)
         for source in 1:n
             forward = _comdistnt_directional(workspace,
-                rows.nodes[source], rows.raw[source], exclude_conspecifics)
+                rows.nodes[source], rows.raw[source], exclude)
             if source >= target
                 result[source, target] = forward
             else
                 reverse = result[target, source]
-                value = _comdistnt_symmetric(forward, reverse, rows, source, target, abundance_weighted)
+                value = _comdistnt_symmetric(forward, reverse, rows, source, target, weighted)
                 result[source, target] = result[target, source] = value
             end
         end

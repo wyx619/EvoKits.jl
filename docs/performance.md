@@ -139,6 +139,46 @@ retain the full route: a 1,000-tip star with 64 sites changed from 0.521 to
 not guarantee an improvement for every input. All MB figures are decimal
 cumulative allocations, not peak memory.
 
+### Comdistnt virtual trees and directional requests
+
+The same serial protocol compares `comdistnt` with its preceding sparse
+full-tree implementation. Both exclusion settings are measured; this table
+uses abundance weighting and `exclude_conspecifics=true`, three observations
+per site and complete public-call matrix output, including preparation:
+
+| Shape | Tips | Sites | Full-tree baseline | Automatic | Baseline allocation | Automatic allocation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Balanced | 100,000 | 8 | 9.98 ms | 1.00 ms | 7.20 MB | 1.64 MB |
+| Balanced | 100,000 | 64 | 68.9 ms | 1.16 ms | 7.25 MB | 1.73 MB |
+| Comb | 100,000 | 8 | 10.1 ms | 0.830 ms | 7.20 MB | 1.64 MB |
+| Comb | 100,000 | 64 | 72.7 ms | 1.21 ms | 7.25 MB | 1.73 MB |
+| Star | 100,000 | 8 | 4.67 ms | 0.489 ms | 4.00 MB | 1.22 MB |
+| Star | 100,000 | 64 | 34.4 ms | 0.662 ms | 4.05 MB | 1.30 MB |
+
+For the same 100,000-tip balanced input with 64 sites, selected requests
+include input preparation but exclude pair-argument parsing. The four-request
+and chain definitions match the preceding `comdist` table. Each unique pair
+requires both directions; target passes are shared between requests:
+
+| Requests | Forced full tree | Automatic | Full-tree allocation | Automatic allocation |
+| --- | ---: | ---: | ---: | ---: |
+| One pair | 3.94 ms | 0.978 ms | 7.21 MB | 1.64 MB |
+| Four requests | 5.75 ms | 1.08 ms | 7.21 MB | 1.65 MB |
+| Chain, 63 pairs | 69.0 ms | 1.09 ms | 7.23 MB | 1.71 MB |
+
+Measured independently on the complete balanced input, record preparation
+takes 0.329 ms / 0.820 MB and contraction to 383 nodes takes
+0.600 ms / 0.842 MB. With prepared workspaces, one target pass takes
+1.21 ms on the full tree and 0.00480 ms on the compressed tree, both with
+zero allocated bytes. These passes exclude preparation and directional
+source averaging; each direct call also prepares its records, tree and workspaces.
+
+Sparse large-tree improvements do not imply a speedup for every input.
+The 1,000-tip star with 64 sites stays on the full route; without exclusion
+it changed from 0.448 to 0.470 ms. Full output still needs quadratic storage,
+and each direct matrix/data call still validates/prepares the complete original input.
+All allocations are cumulative, not peak memory.
+
 ## Rao diversity partition
 
 `raoD` reuses the sparse row preparation and tree workspace of `comdist` for
