@@ -131,11 +131,26 @@ allocation bound after compilation in both weighting modes.
 rerooted tip means. Centered means/SDs avoid subtracting large nearly equal
 moments; scaled covariance uses correlation deficits to retain tiny contrasts
 below long stems. Neither full VCV/correlation matrices nor site submatrices
-are constructed. For n sites, p tips, e nodes and q observed records, CSC work
+are constructed by PSV/PSR/PSE/PSC/PSD. For n sites, p tips, e nodes and q
+observed records, aligned CSC work
 is `O(nnz+p+n+e+n*e)`, with `O(q+p+n+e)` auxiliary storage. The full-pool
 variance is prepared once in `O(e+p)` work per call. Dense input also scans
 `n*p` values. Each site still scans the full tree, and public calls prepare
-their inputs again. PSE/PSC and the complete PSD call still use VCV.
+their inputs again. Permuted labels additionally sort per-site presence
+records for PSV/PSR/PSC; weighted PSE/PSD preparation needs no such sort.
+
+`pse` accumulates weighted cross-subtree contrasts instead of subtracting a
+quadratic form from a weighted trace. Abundances are scaled before summation;
+if positive normalized weights underflow, a rare BigFloat tree pass preserves
+their contributions. `psc` propagates the two nearest distinct identities
+under `1-Cij` in two tree passes. Its raw-covariance path uses shared node
+heights, preserving the original definition even when the value is negative.
+
+`psd` shares one label/record preparation, tree geometry, full-pool variance
+and reusable mean/mass workspace. It derives PSR and its variance from PSV,
+and reuses PSV for equal-abundance PSE. Output contains seven independent
+vectors in site order; it needs no site-pair matrix. Separate public calls
+still prepare their inputs independently.
 
 `expected_pd` / `pd_variance` replace ancestor–descendant edge-pair enumeration
 with subtree sums. The full Bernoulli richness curve takes `O(p*e)` work and
@@ -182,6 +197,40 @@ timings depend on tree shape, sites, occupancy and hardware. A full 100,000-tip
 Float64 VCV alone would require 80 GB. Separate numerical/storage regressions
 use exhaustive small-tree subsets, extreme branch scales and a 20,000-tip
 sparse PSV input.
+
+### PSE, PSC and shared PSD
+
+The following comparisons use the same serial protocol, balanced unit-branch
+trees, eight sites and three presences per site with abundances `[1,2,3]`.
+Correlation scaling is enabled, and PSD includes variance:
+
+| Call | Tips | Previous | Current | Previous allocation | Current allocation |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `pse` | 1,024 | 13.3 ms | 0.109 ms | 25.4 MB | 0.111 MB |
+| `psc` | 1,024 | 13.3 ms | 0.162 ms | 25.4 MB | 0.125 MB |
+| `psd`, including variance | 1,024 | 28.6 ms | 0.384 ms | 51.3 MB | 0.235 MB |
+
+Current calls with the same site settings scale as follows. Separate cases
+also cover one site, raw covariance and richness 30/300:
+
+| Shape | Tips | PSE | PSC | PSD, including variance | PSD allocation |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Balanced | 1,000 | 0.105 ms | 0.177 ms | 0.371 ms | 0.230 MB |
+| Balanced | 10,000 | 0.980 ms | 1.24 ms | 3.39 ms | 2.25 MB |
+| Balanced | 100,000 | 21.0 ms | 14.9 ms | 65.9 ms | 22.4 MB |
+| Comb | 100,000 | 20.7 ms | 19.4 ms | 59.9 ms | 22.4 MB |
+| Star | 100,000 | 8.86 ms | 6.95 ms | 28.6 ms | 12.0 MB |
+
+On the 100,000-tip balanced tree, four separate calls to PSV/PSR/PSE/PSC
+take 107.7 ms / 57.6 MB, versus 65.4 ms / 22.4 MB for PSD. With equal
+abundances, PSD takes 51.8 ms because PSE reuses PSV. Preparing the weighted
+records alone takes 0.215 ms / 0.803 MB; tree geometry takes 2.52 ms / 6.40 MB.
+With prepared geometry and workspace, the internal single-site PSE and PSC
+kernels take 2.30 ms and 1.59 ms, respectively, with zero allocated bytes.
+These internal calls exclude input preparation and full-pool variance and
+do not expose a public prepared context. All figures are cumulative
+allocations, not peak memory. Storage regressions cover both scaling modes
+at 20,000 tips, including PSD's allocation savings over separate calls.
 
 ## Tree distance precision
 

@@ -31,6 +31,6 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 
 `rao.jl` 定义 Rao 熵及其分解，复用 `community_distances.jl` 准备的稀疏记录与分支距离工作区；两者均先于 `data_metrics.jl` 的 `CommunityData` 适配加载。
 
-`phylogenetic_species.jl` 用树统计量计算 PSV/PSR 及有限物种池方差；`expected_pd.jl` 定义 Bernoulli 模型下的解析 PD 矩与分支丰度。两者先于保留 PSE/PSC/PSD、PD 变体及 bootstrap 的 `diversity.jl` 加载，随后由 `data_metrics.jl` 添加输入适配。
+`phylogenetic_species.jl` 用稀疏记录与树统计量计算 PSV/PSR/PSE/PSC/PSD，包括有限物种池方差及 PSD 共用准备，并复用 `community_distances.jl` 的不同目标身份工作区。`expected_pd.jl` 定义 Bernoulli 模型下的解析 PD 矩与分支丰度；两者先于保留 PD 变体及 bootstrap 的 `diversity.jl` 加载，随后由 `data_metrics.jl` 添加输入适配。
 
 数值测试继续放在 `test/`，小型离线参考表放在 `test/fixtures/`。结构调整采用相关测试文件和包加载检查。本地验收脚本、历史源码快照保存在受 Git 忽略的 `validation/`；历史 `git show` 命令中的路径对应原提交的目录结构。

@@ -151,6 +151,12 @@ See [Rao partition rules and example](community.md#rao-diversity-partition).
   `NaN` PSV and variance; `compute_var=false` leaves variance as `NaN`.
   `psr`, `pse`, `psc`, and `psd` return named tuples whose field names are
   the metric names documented by their function. See [PSV and PD moments](community.md#psv-psr-and-analytical-pd-moments).
+- `pse` uses relative abundances; equal positive abundances give PSV. `psc`
+  uses presence and excludes the same species identity, retaining zero
+  contrasts to different species. Both return their metric and `richness`,
+  with `NaN` for fewer than two species. Raw-covariance PSC can be negative.
+  `psd` returns `psv`, `var_psv`, `psc`, `psr`, `var_psr`, `pse` and `richness`
+  in site order, each with its own array and the individual metric's rules.
 - `expected_pd` and `pd_variance` return `ExpectedPDResult`; `richness` is
   `1:tree.ntips`. Every tip independently occurs with probability
   `richness/tree.ntips`, so richness is an expected count. `expected_pd` is

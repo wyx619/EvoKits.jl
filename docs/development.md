@@ -53,10 +53,12 @@ reusable bounds. Both use existing dependencies and operate on copied scores.
 rows and branch-distance workspace from `community_distances.jl`. Both load
 before `data_metrics.jl` adds the `CommunityData` adapters.
 
-`phylogenetic_species.jl` defines PSV/PSR and their finite-pool variance using
-tree summaries. `expected_pd.jl` defines analytical Bernoulli PD moments and
-edge abundance. Both load before `diversity.jl`, which retains PSE/PSC/PSD
-and PD variants/bootstrap; `data_metrics.jl` then adds the input adapters.
+`phylogenetic_species.jl` defines PSV/PSR/PSE/PSC/PSD using sparse records and
+tree summaries, including finite-pool variance and shared preparation for PSD.
+It reuses the distinct-target workspace from `community_distances.jl`.
+`expected_pd.jl` defines analytical Bernoulli PD moments and edge abundance.
+Both load before `diversity.jl`, which retains PD variants/bootstrap;
+`data_metrics.jl` then adds the input adapters.
 
 Keep numerical tests under `test/` and small offline reference tables under
 `test/fixtures/`. Run the affected test files and package-loading checks for

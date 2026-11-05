@@ -173,7 +173,21 @@ richness_metric = psr(moment_data, tree)
 moments = expected_pd(tree; upper_bound=false)
 moments.expected_pd  # [1.875, 3.5, 4.875, 6.0]
 moments.variance_pd  # [2.3671875, 2.375, 1.2421875, 0.0]
+diversity = psd(moment_data, tree)
+diversity.pse         # [1/2, 5/6]: equal abundances give PSE = PSV
+diversity.psc         # [1/2, 1/2]
+pse(sparse([2.0 1 0 0]), tree).pse  # [4/9]
 ```
+
+`pse` weights pair contrasts by relative abundance; `psc` averages each
+present species' smallest `1-Cij` to another species. In raw covariance mode
+PSC is one minus the mean largest shared branch length, can be negative,
+and depends on branch-length units. In correlation mode, the best match on
+a non-ultrametric tree can differ from the nearest tip by patristic distance.
+Zero-length paths to other species remain eligible. `psd` returns all four
+metrics, PSV/PSR variances and richness together, using the same definitions
+and NaN rules as the individual calls. Dense/CSC and `CommunityData` inputs
+are preserved. Algorithm and allocation details are in the [performance guide](performance.md#analytical-diversity-moments).
 
 `expected_pd` and its alias `pd_variance` retain a different model: every tip
 occurs **independently**, with probability `richness/tree.ntips`. Thus richness
