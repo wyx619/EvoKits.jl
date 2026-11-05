@@ -97,6 +97,48 @@ on tree shape, site count and occupancy. Allocations are cumulative, not peak
 memory. Separate storage regressions check 12 sites, 20,000 tips and 36 stored
 values against a 15 MB allocation bound after compilation for each function.
 
+### Comdist virtual trees and selected pairs
+
+The following measurements compare the preceding sparse full-tree implementation
+with automatic compression. They use Julia 1.12.7 on an i5-12400, one Julia/BLAS
+thread and the median of three calls after warm-up. Trees have unit branches;
+each site has three observations with abundances `[1,2,3]`, and abundance
+weighting is enabled. Tree construction is excluded; public-call preparation
+and the complete matrix output are included:
+
+| Shape | Tips | Sites | Full-tree baseline | Automatic | Baseline allocation | Automatic allocation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Balanced | 100,000 | 8 | 36.1 ms | 1.15 ms | 12.0 MB | 1.64 MB |
+| Balanced | 100,000 | 64 | 300 ms | 1.08 ms | 12.1 MB | 1.74 MB |
+| Comb | 100,000 | 8 | 40.1 ms | 0.782 ms | 12.0 MB | 1.64 MB |
+| Comb | 100,000 | 64 | 317 ms | 1.06 ms | 12.1 MB | 1.74 MB |
+| Star | 100,000 | 8 | 14.5 ms | 0.518 ms | 6.40 MB | 1.22 MB |
+| Star | 100,000 | 64 | 106 ms | 0.639 ms | 6.45 MB | 1.31 MB |
+
+Private route comparisons on the 100,000-tip balanced tree with 64 sites
+give the following selected-pair measurements. Input preparation is included;
+pair-argument parsing is outside timing. Four requests are
+`[(1,64),(3,4),(4,3),(1,1)]`; the chain requests adjacent site indices:
+
+| Requests | Forced full tree | Automatic | Full-tree allocation | Automatic allocation |
+| --- | ---: | ---: | ---: | ---: |
+| One pair | 7.60 ms | 1.06 ms | 12.0 MB | 1.64 MB |
+| Four requests | 13.9 ms | 1.03 ms | 12.0 MB | 1.64 MB |
+| Chain, 63 pairs | 306 ms | 1.14 ms | 12.0 MB | 1.71 MB |
+
+Measured separately on the same balanced input, record preparation takes
+0.330 ms / 0.820 MB and contraction to 383 nodes takes 0.603 ms / 0.842 MB.
+With already allocated workspaces, one target pass takes 4.67 ms on the full
+tree and 0.00640 ms on the compressed tree; both allocate zero bytes. These
+internal passes exclude preparation; each direct call also prepares its records, tree and workspaces.
+
+Direct matrix/data calls still require linear preparation, and complete
+matrices retain quadratic output storage. Denser cases
+retain the full route: a 1,000-tip star with 64 sites changed from 0.521 to
+0.535 ms. Timings vary with occupancy, shape and hardware; the policy does
+not guarantee an improvement for every input. All MB figures are decimal
+cumulative allocations, not peak memory.
+
 ## Rao diversity partition
 
 `raoD` reuses the sparse row preparation and tree workspace of `comdist` for

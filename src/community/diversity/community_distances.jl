@@ -12,7 +12,8 @@ end
 _community_distance_ratio(value::Rational, scale::Rational) =
     Float64(BigFloat(value) / BigFloat(scale))
 
-function _community_distance_rows(community, tree, tip_labels, weighted)
+function _community_distance_rows(community, tree, tip_labels, weighted;
+    active_sites = nothing, need_lengths = true)
     _validate_community_values(community)
     _validate_community_branch_lengths(tree)
     size(community, 2) == tree.ntips ||
@@ -23,6 +24,7 @@ function _community_distance_rows(community, tree, tip_labels, weighted)
     T = weighted ? eltype(community) : Float64
     raw = [T[] for _ in 1:n]
     _community_each_positive(community) do row, col, value
+        active_sites !== nothing && !active_sites[row] && return
         push!(nodes[row], tree.tip_ids[perm[col]])
         push!(raw[row], weighted ? value : 1.0)
     end
@@ -36,11 +38,16 @@ function _community_distance_rows(community, tree, tip_labels, weighted)
         totals[row] = sum(weights[row])
         weights[row] ./= totals[row]
     end
+    lengths = need_lengths ? _comdist_lengths(tree) : Float64[]
+    return (; nodes, weights, raw, scales, totals, lengths)
+end
+
+function _comdist_lengths(tree)
     lengths = zeros(tree.nnodes)
     for edge in 1:tree.nedges
         lengths[tree.child_of_edge[edge]] = tree.edge_length[edge]
     end
-    return (; nodes, weights, raw, scales, totals, lengths)
+    return lengths
 end
 
 # The distance at a node is the target-weighted sum below it plus the sum
@@ -93,27 +100,43 @@ function _comdist_target!(workspace, tree, nodes, weights, lengths)
 end
 
 """
-    comdist(community, tree; abundance_weighted=false, tip_labels=nothing)
-    comdist(data::CommunityData, tree; abundance_weighted=false)
+    comdist(community, tree; abundance_weighted=false, pairs=nothing, tip_labels=nothing)
+    comdist(data::CommunityData, tree; abundance_weighted=false, pairs=nothing)
 
 Mean pairwise phylogenetic distance between communities. Rows are sites and
 columns are tree tips; `tip_labels` describes matrix column order. Positive
 values denote presence, or supply weights with `abundance_weighted=true`.
-Returns a symmetric Float64 matrix in site order. Diagonals include all
+Returns a symmetric Float64 matrix in site order by default. With `pairs`,
+returns a Float64 vector in the supplied order of integer site-index pairs,
+retaining repeated, reversed and self pairs. Empty requests give an empty
+vector. Input values/labels and all branch lengths are always validated.
+Only requested endpoints are retained for selected-pair computation.
+Diagonals include all
 within-site ordered tip pairs, including zero self-distances; empty sites
 give NaN. Branch lengths must be finite and non-negative with a finite sum.
 
-CSC input is traversed directly. Each target community uses bottom-up branch
-weight/distance sums and a top-down pass, without a dense community, a full
-tip-distance matrix or a tip-pair weight matrix. The site-pair output remains
-quadratic in the number of sites. Inputs are not mutated.
+CSC input is traversed directly. Sparse requests can compress the tree to
+observed tips and connecting nodes, summing original branches on unary paths;
+otherwise uses full-tree passes. Preparation is linear in tree size, without
+a full tip-distance, dense community or site-pair weight matrix. Full output
+remains quadratic in sites; selected output uses linear space in requests.
+Inputs are not mutated.
 """
 function comdist(community::AbstractMatrix{<:Real}, tree::CompactTree;
     abundance_weighted::Bool = false,
+    pairs = nothing,
     tip_labels::Union{Nothing, AbstractVector{<:AbstractString}} = nothing,
 )
-    rows = _community_distance_rows(community, tree, tip_labels, abundance_weighted)
-    return _comdist(rows, tree)
+    selected = _community_pairs(pairs, size(community, 1))
+    active_sites = selected === nothing ? nothing : falses(size(community, 1))
+    if selected !== nothing
+        for (i, j) in selected
+            active_sites[i] = active_sites[j] = true
+        end
+    end
+    rows = _community_distance_rows(community, tree, tip_labels, abundance_weighted;
+        active_sites, need_lengths = false)
+    return _comdist_adaptive(rows, tree, selected)
 end
 
 # RaoD reuses the prepared rows and workspace, then evaluates the pooled
