@@ -72,12 +72,14 @@ this fallback can add merge work on nested or extreme-scale inputs.
 
 For e tree nodes, p tips, q retained presence records, b branch memberships and
 k requests, selected auxiliary storage is `O(e+p+q+b+n+k)`. Full output uses
-`O(e+p+q+b+n²+n*min(n,block_size))`, including four quadratic mean buffers;
+`O(e+p+q+b+n²+n*min(n,block_size))`, including two full result matrices and
+two triangular scale/correction buffers;
 only the mean and count matrices remain in the returned result. Tree parsing,
 branch collection/sorting and label matching still cost work per tree. This
 optimization does not remove the final matrix's quadratic lower bound.
 
-The following compares the existing `mean_dist(phylobeta(...) for ...)` route
+The following earlier measurements, before triangular scratch storage, compare
+the `mean_dist(phylobeta(...) for ...)` route
 with direct accumulation. Julia 1.12.7 / i5-12400, one Julia/BLAS thread,
 warmed medians of three serial runs; 10,000 tips, 256 sites, three present
 species per site, eight draws, unit branches and `block_size=64`. Each synthetic
@@ -100,6 +102,58 @@ measurements cover sizes 1/16/64/256: a larger block changes temporary storage,
 not arithmetic results. Allocations are cumulative, not peak memory. The
 selected-pair storage regression uses 6,000 sites and 40,000 tips with four
 requests, retaining twelve observation records and four endpoint branch sets.
+
+### Mean accumulator storage
+
+Both `mean_dist(inputs)` and `mean_dist(data, trees)` retain full sums/counts
+matrices as their eventual output, while scales/corrections use packed lower
+triangles including the diagonal. Accumulation and finalization use distinct
+output and scratch indices. The scaled compensated sum, finite counts,
+NaN/diagonal rules and posterior shared-branch blocks are unchanged. The
+final mean is written and mirrored in place; no replacement output is allocated.
+Selected pairs keep one-dimensional state and their existing storage cost.
+
+With n sites, 64-bit Int and Float64, array payload changes from `32n²` to
+`24n²+8n` bytes, approaching a 25% reduction. At 6,000 sites this is
+1.152→0.864 GB; the final two output matrices alone still require 0.576 GB.
+Packing all four buffers would halve accumulation storage but require two
+new full output matrices. A prototype retaining both packed state and expanded
+output measured 134.25 MB of objects at 2,048 sites, versus 100.68 MB for the
+chosen layout. These are array/object sizes, not process peaks.
+
+The comparisons below use Julia 1.12.7, one Julia/BLAS thread, serial warmed
+medians of three runs, against the preceding four-full-matrix implementation.
+Public timings include validation, preparation, accumulation and final output;
+input construction is excluded. Dense/lazy inputs contain finite/NaN values
+and extreme scales. The subset input permutes half the labels; the remaining
+output sites have no observations. The posterior case uses a 256-tip unit-branch
+star, one present tip per site and `block_size=64`.
+
+| Input | Sites | Draws | Previous | Current | Previous allocated | Current allocated |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Dense distances | 2,048 | 8 | 484 ms | 472 ms | 136.57 MB | 103.03 MB |
+| Lazy distances | 2,048 | 8 | 576 ms | 586 ms | 136.57 MB | 103.03 MB |
+| Permuted subset | 1,024 | 8 | 90.7 ms | 89.7 ms | 34.08 MB | 25.70 MB |
+| Posterior beta | 2,048 | 8 | 243 ms | 236 ms | 136.00 MB | 102.47 MB |
+
+The grid covers 36 public comparisons, including balanced/comb/star posterior
+trees and selected pairs; 11 cases were rechecked in three alternating batches.
+The table uses the alternating results where available. Runtime remains close
+and depends on the input; this change primarily reduces accumulator storage.
+In particular, it does not reduce high-occupancy comb-tree branch products or
+the quadratic output bound. Allocation savings match the removed triangles.
+
+Separate stages at 2,048 sites and eight lazy draws retain 134.22→100.68 MB
+of accumulator objects; the two result arrays retain 67.11 MB in both versions.
+Measured accumulation and finalization allocate zero bytes; finalization takes
+47.8→48.8 ms. Stage medians are not added to infer an exact public timing.
+Three fresh processes per version, each loading/warming the same modules,
+measure a 4,096-site, two-draw public call with lazy inputs. Median cumulative
+allocation is 539.14→404.95 MB; `Sys.maxrss()` reports total process peaks of
+1,081.78→947.79 MB, including roughly 551 MB of prior load/JIT peak. This is
+about a 12% process-peak reduction in that experiment, distinct from the 25%
+array-payload reduction. Inputs, retained output, cumulative allocation and
+process RSS are reported separately; no forced GC occurs inside the public call.
 
 ## Community long-table export
 

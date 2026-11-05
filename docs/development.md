@@ -95,6 +95,11 @@ the established beta formulas and mean accumulators, while keeping posterior
 tree buffers separate from reusable single-tree contexts. Full output scatters
 sparse branch membership products into one reusable column block; selected
 requests retain only endpoint records and deduplicate unordered pairs.
+Both mean entry points use `_mean_dist_state`: sums/counts remain full output
+matrices while scales/corrections use packed lower triangles including the
+diagonal. Column offsets distinguish output from scratch indices; finalization
+normalizes and mirrors in place without allocating replacement matrices.
+Selected-pair output keeps four one-dimensional arrays.
 
 Keep numerical tests under `test/` and small offline reference tables under
 `test/fixtures/`. Run the affected test files and package-loading checks for

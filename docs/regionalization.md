@@ -263,7 +263,9 @@ tree's tip order defines the columns for all later trees. All supplied species,
 including zero columns, must exist in every tree. All community values are
 validated, including unrequested sites. Full output uses a reusable shared-branch
 column block controlled by `block_size=256`. It still requires quadratic mean
-state and final output; see [performance](performance.md#direct-posterior-beta-means).
+state and final output. Both mean entry points retain two full result matrices
+and pack scale/correction work arrays into triangles, with no replacement
+matrices at finalization; see [performance](performance.md#mean-accumulator-storage).
 
 For `mean_dist(inputs)`, output order defaults to the first input's labels. Supply `sample_labels` to
 set a complete domain explicitly; later labeled inputs may be reordered or

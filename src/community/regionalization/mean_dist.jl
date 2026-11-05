@@ -72,7 +72,7 @@ end
 # Scale a compensated running sum by the largest observed distance. The sum
 # cannot overflow for an Int-sized replicate count, and tiny original units
 # are retained until the final division (including subnormal distances).
-@inline function _mean_dist_add!(state, index, value, nan_policy)
+@inline function _mean_dist_add!(state, index, value, nan_policy, scratch = index)
     if isnan(value)
         nan_policy === :propagate && (state.sums[index] = NaN)
         return nothing
@@ -80,33 +80,45 @@ end
     state.counts[index] += 1
     old_sum = state.sums[index]
     isnan(old_sum) && return nothing
-    scale = state.scales[index]
+    scale = state.scales[scratch]
     if value > scale
         factor = scale / value
         old_sum *= factor
-        state.corrections[index] *= factor
-        state.scales[index] = scale = value
+        state.corrections[scratch] *= factor
+        state.scales[scratch] = scale = value
     end
     term = scale == 0 ? 0.0 : value / scale
     updated = old_sum + term
-    state.corrections[index] += old_sum >= term ?
+    state.corrections[scratch] += old_sum >= term ?
         (old_sum - updated) + term : (term - updated) + old_sum
     state.sums[index] = updated
     return nothing
 end
 
-@inline function _mean_dist_index(i, j, n)
-    lo, hi = minmax(i, j)
-    return hi + (lo - 1) * n
+# The complete sums/counts matrices become the returned result. Only their
+# lower triangles are accumulated; scales/corrections have no output role
+# and use packed lower triangles including the diagonal. Keep pair vectors
+# one-dimensional, with identical output and scratch indices.
+function _mean_dist_state(n, selected)
+    shape = selected === nothing ? (n, n) : (length(selected),)
+    scratch = selected === nothing ? n * (n + 1) ÷ 2 : length(selected)
+    return (; sums = zeros(shape), counts = zeros(Int, shape),
+        scales = zeros(scratch), corrections = zeros(scratch))
 end
+
+# Number of unused matrix entries removed before lower-triangle column j.
+@inline _mean_dist_skipped(j) = j * (j - 1) ÷ 2
 
 function _mean_dist_full!(state, distances, mapping, selected, nan_policy, n)
     m = length(mapping)
     # Validate the complete supplied matrix, also when selecting output pairs.
     for j in 1:m, i in j:m
         value = _mean_dist_matrix_value(distances, i, j)
-        selected === nothing && _mean_dist_add!(state,
-            _mean_dist_index(mapping[i], mapping[j], n), value, nan_policy)
+        if selected === nothing
+            lo, hi = minmax(mapping[i], mapping[j])
+            index = hi + (lo - 1) * n
+            _mean_dist_add!(state, index, value, nan_policy, index - _mean_dist_skipped(lo))
+        end
     end
     if selected !== nothing
         inverse = zeros(Int, n)
@@ -150,18 +162,29 @@ function _mean_dist_pairs!(state, distances, input_pairs, mapping, selected, nan
     return nothing
 end
 
+@inline function _mean_dist_finish_value!(state, index, scratch = index)
+    count, sum = state.counts[index], state.sums[index]
+    state.sums[index] = count == 0 || isnan(sum) ? NaN :
+        state.scales[scratch] * clamp((sum + state.corrections[scratch]) / count, 0.0, 1.0)
+    return nothing
+end
+
 function _mean_dist_finish!(state, selected, n)
-    indices = selected === nothing ?
-        (_mean_dist_index(i, j, n) for j in 1:n for i in j:n) : eachindex(state.sums)
-    for index in indices
-        count, sum = state.counts[index], state.sums[index]
-        state.sums[index] = count == 0 || isnan(sum) ? NaN :
-            state.scales[index] * clamp((sum + state.corrections[index]) / count, 0.0, 1.0)
-    end
     if selected === nothing
+        for j in 1:n
+            offset, skipped = (j - 1) * n, _mean_dist_skipped(j)
+            for i in j:n
+                index = i + offset
+                _mean_dist_finish_value!(state, index, index - skipped)
+            end
+        end
         for j in 1:n, i in (j + 1):n
             state.sums[j, i] = state.sums[i, j]
             state.counts[j, i] = state.counts[i, j]
+        end
+    else
+        for index in eachindex(state.sums)
+            _mean_dist_finish_value!(state, index)
         end
     end
     return nothing
@@ -200,7 +223,8 @@ preserving repeated, reversed and self pairs. Pair-vector inputs require this
 explicit option; their own pair indices refer to their own labels. Repeated
 source pairs must agree and contribute once per replicate. Selected output
 uses O(sites + requested pairs + current input pairs) auxiliary space, with no
-full matrix constructed. Full output and its work buffers use O(sites^2).
+full matrix constructed. Full output reuses its two result matrices and packs
+the scale/correction work arrays into triangles; storage remains O(sites^2).
 Complete supplied matrices are validated even for selected output. Inputs are
 not retained or mutated; a scaled compensated sum avoids overflow in averaging.
 
@@ -239,9 +263,7 @@ function mean_dist(inputs; component::Symbol = :total, sample_labels = nothing,
         if replicates == 0
             labels = labels === nothing ? copy(source.labels) : labels
             selected = _community_pairs(pairs, length(labels))
-            shape = selected === nothing ? (length(labels), length(labels)) : (length(selected),)
-            state = (sums = zeros(Float64, shape), counts = zeros(Int, shape),
-                scales = zeros(Float64, shape), corrections = zeros(Float64, shape))
+            state = _mean_dist_state(length(labels), selected)
             lookup = Dict(label => i for (i, label) in enumerate(labels))
             kind, family = source.kind, source.family
         else

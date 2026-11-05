@@ -118,9 +118,14 @@ function _mean_beta_visit!(state, workspace, lengths, selected, family, componen
             _mean_dist_add!(state, index, _mean_beta_component(abc..., family, component), policy)
         end
     elseif n < 128
-        for j in 1:n, i in j:n
-            abc = _community_branch_components(branches[i], branches[j], lengths)
-            _mean_dist_add!(state, i + (j - 1) * n, _mean_beta_component(abc..., family, component), policy)
+        for j in 1:n
+            offset, skipped = (j - 1) * n, _mean_dist_skipped(j)
+            for i in j:n
+                abc = _community_branch_components(branches[i], branches[j], lengths)
+                index = i + offset
+                _mean_dist_add!(state, index, _mean_beta_component(abc..., family, component),
+                    policy, index - skipped)
+            end
         end
     else
         # This is the same sparse incidence product, scattered directly into
@@ -147,11 +152,15 @@ function _mean_beta_visit!(state, workspace, lengths, selected, family, componen
                     shared[i, j - first + 1] += edge_length
                 end
             end
-            for j in first:last, i in j:n
-                abc = _community_components_from_shared(branches, lengths,
-                    shared[i, j - first + 1], pd_values, i, j)
-                _mean_dist_add!(state, i + (j - 1) * n,
-                    _mean_beta_component(abc..., family, component), policy)
+            for j in first:last
+                offset, skipped = (j - 1) * n, _mean_dist_skipped(j)
+                for i in j:n
+                    abc = _community_components_from_shared(branches, lengths,
+                        shared[i, j - first + 1], pd_values, i, j)
+                    index = i + offset
+                    _mean_dist_add!(state, index, _mean_beta_component(abc..., family, component),
+                        policy, index - skipped)
+                end
             end
         end
     end
@@ -171,7 +180,6 @@ function _mean_beta(community, trees, species, sample_labels, complete;
     plan = _mean_beta_prepare(community, sample_labels, pairs)
     n = length(plan.labels)
     selected = plan.selected === nothing ? nothing : plan.unique_pairs
-    shape = selected === nothing ? (n, n) : (length(selected),)
     state = nothing
     replicates = 0
     for tree in trees
@@ -183,7 +191,7 @@ function _mean_beta(community, trees, species, sample_labels, complete;
         end
         branches = _mean_beta_branches!(plan.workspace, tree, plan.rows, species, complete)
         if state === nothing
-            state = (; sums = zeros(shape), counts = zeros(Int, shape), scales = zeros(shape), corrections = zeros(shape))
+            state = _mean_dist_state(n, selected)
         end
         _mean_beta_visit!(state, plan.workspace, tree.edge_length, selected, index_family,
             component_index, nan_policy, min(Int(block_size), max(n, 1)))
@@ -218,7 +226,8 @@ reuse of another tree's topology occurs. Presence records are prepared once.
 Labels/pairs, component-specific NaNs, `nan_policy`, finite counts and result
 ownership follow `mean_dist(inputs)`. Self pairs are zero or NaN. Use an
 explicit `read_trees(...) do trees ... end` scope for file streams. Complete
-output and four accumulator buffers still need O(sites²) space; selected
+output reuses two full matrices plus packed scale/correction triangles, still
+requiring O(sites²) space; selected
 output uses O(sites + requests) in addition to the current tree/branch sets.
 """
 function mean_dist(community::AbstractMatrix{<:Real}, trees;
