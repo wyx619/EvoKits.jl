@@ -92,7 +92,11 @@ Newick/NEXUS 格式逐文件识别。NEXUS 的树号只统计 `TREE`/`UTREE` 定
 - `pse` 使用相对丰度，正值等丰度时等于 PSV；`psc` 仅使用存在信息，排除同一物种身份，保留不同物种间的零差异。两者返回相应指标及 `richness`，少于两个物种时为 `NaN`，原始协方差模式的 PSC 可为负。`psd` 按群落顺序返回 `psv`、`var_psv`、`psc`、`psr`、`var_psr`、`pse` 和 `richness`，各字段独立拥有数组，沿用单项指标规则。
 - `expected_pd` 和 `pd_variance` 返回 `ExpectedPDResult`；`richness` 为 `1:tree.ntips`。每个 tip 以 `richness/tree.ntips` 的概率独立出现，因此丰富度是期望数量。`expected_pd` 为 PD 均值；`variance_pd` 在 `upper_bound=false` 时为精确 Bernoulli 方差，默认采用 picante 的协方差上界。
 - `pd_calc(tree, tips; variant=...)` 为 tip 子集返回一个标量；矩阵输入返回包含 `pd`、`richness` 和规范化 `variant` 的命名元组。支持 `TBL`、`MST`、`UEH`、`SBL` 和 `TIP`。
-- `pd_bootstrap(tree, ntips; ...)` 返回重复计算得到的标量向量；`pd_bootstrap(community, tree; ...)` 返回包含 `observed`、`replicates` 和 `richness` 的 `PDBootstrapResult`。
+- `pd_bootstrap(tree, ntips; ...)` 返回重复计算得到的标量向量；`pd_bootstrap(community, tree; ...)` 返回包含 `observed`、群落 × 重复次数的 `replicates` 和 `richness` 的 `PDBootstrapResult`。权重按树 tip 顺序，零权重、单物种/根枝及种子兼容约定见 [PD 变体与 bootstrap](community_zh.md#pd-变体与-bootstrap)。
+
+### 后验距离均值
+
+`mean_dist(data, trees; index_family=:sorensen, component=:total, pairs=nothing, nan_policy=:skip, block_size=256)` 逐树直接累计并返回 `MeanDistResult`。矩阵输入还接受 `tip_labels`、`sample_labels`，省略物种标签时由第一棵树的 tip 顺序固定各列含义；`CommunityData` 提供两组标签，并可省略未观测树物种。原 `mean_dist(inputs)` 的距离/beta 汇总契约保留，详见[后验均值](regionalization_zh.md#多棵后验树的平均距离)。
 
 ### 分组与保护指标结果
 

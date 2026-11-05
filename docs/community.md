@@ -148,6 +148,52 @@ columns are not already in tree-tip order. Empty communities return `NaN`
 where a distance or diversity value is undefined; singleton communities are
 accepted by PD, UniFrac, PhyloSor, and RaoD.
 
+### PD variants and bootstrap
+
+`pd_calc(community, tree; variant=:tbl)` returns `pd`, `richness`, and the
+normalized variant, preserving site order. `pd_calc(tree, tips; variant=...)`
+returns a scalar; `tips` are unique tip names or positions. Dense/CSC matrices
+and `CommunityData` use positive abundances as presence.
+
+| Variant | Original branches included |
+| --- | --- |
+| `:tbl` | Paths from observed tips to the original root. |
+| `:mst` | Connections below the observed MRCA, excluding its common root stem. |
+| `:ueh` | Branches with exactly one observed descendant. |
+| `:sbl` | Branches with at least two observed descendants. |
+| `:tip` | Original terminal branches of observed species. |
+
+Empty sites give zero for every variant. A singleton has MST zero; UEH
+includes its whole root path, while TIP includes only its original terminal edge.
+
+```julia
+using Random
+
+variants = pd_calc(data, tree; variant = :ueh)
+draws = pd_bootstrap(data, tree; reps = 99, rng = MersenneTwister(42))
+draws.observed
+draws.replicates              # sites × reps
+fixed_richness = pd_bootstrap(tree, 2; reps = 99, method = :MST,
+    tip_weights = [1.0, 2.0, 3.0, 4.0], rng = MersenneTwister(42))
+```
+
+Bootstrap uses exponential keys for weighted sampling without replacement
+from the complete tree-tip pool, preserving each site's richness. Weights
+follow tree-tip order, must be finite nonnegative Float64 values after conversion,
+and must contain a positive value. Omitted weights are uniform. Tree-only
+calls return a vector; community calls return `PDBootstrapResult`. Empty sites
+give zero; `include_root=false` gives NaN for singleton community sites, as in `pd`.
+
+For weights whose sum is finite, selected subsets and RNG consumption match
+the previous full-sort implementation. Ties follow original tip position;
+zero weights have key `-Inf`. If richness exceeds positive support, remaining
+slots retain the existing index-ordered `-Inf` tie rule, which differs from
+R's rejection of insufficient support. Finite weights whose sum overflows
+are scaled before normalization. R and Julia share the weighted sampling law,
+not identical random streams. Sparse working state and a bounded candidate
+heap replace dense randomized communities and full sorts; performance and
+remaining costs are documented [separately](performance.md#pd-variants-and-bootstrap).
+
 ### PSV, PSR and analytical PD moments
 
 `psv` measures the mean pair contrast `(Cii+Cjj)/2-Cij`. By default C is the

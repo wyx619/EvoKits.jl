@@ -182,7 +182,19 @@ See [Rao partition rules and example](community.md#rao-diversity-partition).
   `variant`. Accepted variants are `TBL`, `MST`, `UEH`, `SBL`, and `TIP`.
 - `pd_bootstrap(tree, ntips; ...)` returns a vector of replicate scalars.
   `pd_bootstrap(community, tree; ...)` returns `PDBootstrapResult` with
-  `observed`, `replicates`, and `richness`.
+  `observed`, a sites-by-reps `replicates` matrix, and `richness`.
+  Weights follow tree-tip order; see [PD variants and bootstrap](community.md#pd-variants-and-bootstrap)
+  for zero weights, singleton/root behavior and seed compatibility.
+
+### Posterior distance means
+
+`mean_dist(data, trees; index_family=:sorensen, component=:total, pairs=nothing,
+nan_policy=:skip, block_size=256)` returns `MeanDistResult` directly over a
+tree iterator. Matrix input also accepts `tip_labels` and `sample_labels`;
+omitted tip labels fix column meanings to the first tree's order. `CommunityData`
+supplies labels and may omit unobserved tree species. The one-argument
+`mean_dist(inputs)` retains its distance/beta aggregation contract. See
+[posterior means](regionalization.md#mean-distances-across-posterior-trees).
 
 ### Grouping and conservation results
 

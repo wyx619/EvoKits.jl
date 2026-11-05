@@ -52,6 +52,55 @@ runtime. The downstream `mean_dist` generator retains no collection of beta
 matrices; full site distances still require quadratic storage, while selected
 pairs use linear storage in sites and requested pairs.
 
+## Direct posterior beta means
+
+`mean_dist(data, trees)` prepares presence records and requests once, evaluates
+only the requested component, and updates the existing compensated mean state.
+Tree-dependent branch buffers reuse capacity but are rebuilt for each tree.
+Selected pairs are deduplicated and retain only their endpoints; no per-tree
+three-component results or full matrices are created for this route.
+
+With at least 128 sites, a sparse branch-to-site index is built directly in
+reusable pointer/member buffers, and its product is scattered into one
+`n × block_size` column buffer, visiting the lower triangle. No generic CSC
+matrices, numeric membership values, weighted copies, per-block slices or
+sparse result matrices are created. For branch occupancy d, this
+shared-length work is proportional to `sum(d*(d+1)/2)`, plus `O(n²)` cell work
+and incidence preparation. Small full outputs and requested pairs merge sorted
+branch sets. Near cancellation, original unique branches are summed directly;
+this fallback can add merge work on nested or extreme-scale inputs.
+
+For e tree nodes, p tips, q retained presence records, b branch memberships and
+k requests, selected auxiliary storage is `O(e+p+q+b+n+k)`. Full output uses
+`O(e+p+q+b+n²+n*min(n,block_size))`, including four quadratic mean buffers;
+only the mean and count matrices remain in the returned result. Tree parsing,
+branch collection/sorting and label matching still cost work per tree. This
+optimization does not remove the final matrix's quadratic lower bound.
+
+The following compares the existing `mean_dist(phylobeta(...) for ...)` route
+with direct accumulation. Julia 1.12.7 / i5-12400, one Julia/BLAS thread,
+warmed medians of three serial runs; 10,000 tips, 256 sites, three present
+species per site, eight draws, unit branches and `block_size=64`. Each synthetic
+ensemble repeats the same tree to isolate computation. Four pair requests
+contain three unique unordered pairs, including a self pair.
+
+| Tree | Output | Generator | Direct | Generator allocated | Direct allocated |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Balanced | Full | 30.0 ms | 7.02 ms | 57.05 MB | 3.95 MB |
+| Balanced | Pairs | 9.65 ms | 1.22 ms | 11.42 MB | 1.09 MB |
+| Comb | Full | 3.09 s | 1.15 s | 851.31 MB | 89.26 MB |
+| Comb | Pairs | 121 ms | 2.51 ms | 206.99 MB | 1.95 MB |
+| Star | Full | 15.2 ms | 4.63 ms | 24.71 MB | 3.41 MB |
+| Star | Pairs | 10.7 ms | 1.75 ms | 8.89 MB | 0.972 MB |
+
+Deep combs retain long branch sets and high shared-branch occupancy, so their
+full matrices remain costly. Tests also cover 16 sites, different tip orders,
+different trees, component-specific NaNs, and extreme shared stems. Column-block
+measurements cover sizes 1/16/64/256: a larger block changes temporary storage,
+not arithmetic results. Allocations are cumulative, not peak memory. The
+selected-pair storage regression uses 6,000 sites and 40,000 tips with four
+requests, retaining twelve observation records and four endpoint branch sets.
+
 ## Community long-table export
 
 For n sites, p species and q positive records, `community_longtable` takes
@@ -445,6 +494,62 @@ weights use the existing BigFloat path, including subnormal weights whose
 intermediate pair products would otherwise lose precision. All allocations
 are cumulative, not peak memory. Numerical/storage checks include deep
 20,000-tip combs and a fully observed pool with individually sparse sites.
+
+## PD variants and bootstrap
+
+`pd_calc` uses sparse presence records and descendant counts, eliminating dense
+community/site-by-edge intermediates and edge-by-observed-tip enumeration.
+Sparse sites reuse the private linear-space heavy-path/segment index and a
+connecting tree with at most `2r-1` nodes. Common root stems are included for
+rooted variants; MST excludes them and TIP uses original terminal edges.
+Original path segments are summed without root-height subtraction. Denser
+sites reuse sequential counts on the full tree. No VCV is constructed.
+
+For e nodes, p tips and q presence records, tree-aligned CSC preparation takes
+`O(nnz+p+n+e)` work/storage bounded by `O(q+p+n+e)`. A sparse r-tip evaluation
+takes `O(r log r+r log² e)` work, including its connection paths; a dense one
+takes `O(e+r)`, while TIP sums r terminal edges directly. The path index is
+created only when first needed and reused across sites and bootstrap draws.
+Permuted labels additionally sort each site's presence records; dense input
+also scans `n*p` values.
+
+Bootstrap still visits every tree-tip probability per nonempty draw to preserve
+the original exponential keys and RNG stream. It keeps only the best r keys,
+or the worst `p-r` keys and their complement: heap storage is
+`O(min(r,p-r))`, with an r-tip selection vector and an optional p-bit complement
+marker. Sampling costs `O(p*(1+log(max(1,min(r,p-r)))))`, plus sorting the selected
+r tips on the best-key route. The required sites-by-reps output remains
+`O(n*reps)`. No dense randomized community is created. The weighted sampling
+law matches R; cross-language seeds do not denote identical streams.
+
+The same serial, warmed, single-thread setup compares the preceding Julia
+implementation and this route. The following uses a 10,000-tip balanced tree,
+16 sites with three species each; tree-only calls have one site. Bootstrap
+uses 11 draws and uniform weights. Public-call timings include validation,
+input preparation, tree preparation and outputs.
+
+| Call | Previous | Current | Previous allocated | Current allocated |
+| --- | ---: | ---: | ---: | ---: |
+| `pd_calc`, TBL | 5.00 ms | 0.967 ms | 7.17 MB | 2.48 MB |
+| Community `pd_bootstrap` | 99.3 ms | 13.0 ms | 76.18 MB | 2.96 MB |
+| Tree `pd_bootstrap` | 19.6 ms | 2.22 ms | 28.90 MB | 2.57 MB |
+
+Comb and star trees show the same direction. Dense 1,024-tip, four-site input
+with richness 1,000 retains sequential counts: TBL takes 0.0667 ms versus
+7.35 ms previously. For 100,000 tips and 64 three-species sites, public TBL
+calls take 15.0/10.6/5.63 ms and allocate 21.50/22.40/12.09 MB for
+balanced/comb/star trees. This includes preparing a new index per public call.
+On the balanced tree, internal first-site workspace preparation alone takes
+11.1 ms / 20.59 MB, retaining 19.78 MB; a subsequent three-tip evaluation takes
+21.7 μs / 1,696 bytes including its small input vector, excluding public input
+validation. These are cumulative allocations and retained object sizes, not
+peak memory. Standalone calls do not retain a public PD context.
+
+Subset sums are checked against original-edge enumeration and local caper
+source. Sampling tests compare selected subsets and the next RNG value with
+stable full sorting, including ties, zero weights and complement/full draws;
+an independently enumerated weighted sampling law is checked in both Julia
+and R. The sparse storage regression uses a 20,000-tip comb and 12 sites.
 
 ## Tree distance precision
 

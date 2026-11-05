@@ -110,7 +110,7 @@ nexus_example = mktempdir() do dir
     data = CommunityData(sparse([1 1 0; 1 0 1; 0 1 1]);
         species_labels = ["C", "A", "B"])
     average = read_trees(path) do trees
-        mean_dist(phylobeta(data, tree) for tree in trees)
+        mean_dist(data, trees)
     end
     sampled = tree_sampler(path; n = 2, replace = false,
         rng = MersenneTwister(42))

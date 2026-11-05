@@ -121,7 +121,7 @@ indicator_result.counts        # 每个区域实际返回的物种数
 
 ## 多棵后验树的平均距离
 
-`mean_dist` 按群落标签汇总多棵树的 beta 距离，返回 `MeanDistResult`。输入迭代器只遍历一次，可边计算每棵树的 beta 边汇总。所有 beta 输入须为同一种结果、同一 Sørensen/Jaccard 指数族；`component` 选择 `:total`（默认）、`:turnover` 或 `:nestedness`。
+`mean_dist(data, trees)` 逐棵计算并直接累计一个系统发育 beta 成分，返回 `MeanDistResult`。群落记录与请求调度只准备一次，每棵树分别匹配和校验，不再为每棵树创建三组成分结果。树迭代器只消费一次；`index_family` 选择 `:sorensen` 或 `:jaccard`，`component` 选择 `:total`（默认）、`:turnover` 或 `:nestedness`。原有 `mean_dist(inputs)` 继续接受已经计算的 beta 或距离结果迭代器。
 
 ```julia
 using Random
@@ -132,15 +132,14 @@ posterior_analysis = mktempdir() do dir
     write_tree(path, "((A:1,B:1):1,(C:1,D:1):1);")
     write_tree(path, "((C:1,D:1):2,(B:1,A:1):2);"; append = true)
     average = read_trees(path) do trees
-        mean_dist(phylobeta(regional_data, tree) for tree in trees)
+        mean_dist(regional_data, trees)
     end
-    # 两个阶段均只处理指定群落对，不生成完整矩阵。
+    # 只准备请求端点，每个唯一群落对计算一次。
     selected = read_trees(path) do trees
-        mean_dist((phylobeta(regional_data, tree; pairs = requested)
-            for tree in trees); pairs = requested)
+        mean_dist(regional_data, trees; pairs = requested)
     end
     sampled = tree_sampler(path; n = 4, rng = MersenneTwister(42))
-    sampled_average = mean_dist(phylobeta(regional_data, tree) for tree in sampled)
+    sampled_average = mean_dist(regional_data, sampled)
     (; average, selected, sampled, sampled_average)
 end
 
@@ -162,7 +161,9 @@ selected.counts
 
 相同调用也接受 NEXUS 后验树文件，并应用其中的 `TRANSLATE` 翻译表。
 
-输出标签默认为首份输入的顺序，可用 `sample_labels` 显式指定完整集合。后续带标签输入可重排或缺少部分群落；未知标签、重名或空名报错。裸矩阵使用统一的输出标签顺序，维度须覆盖完整集合；各自带标签的矩阵写为 `(distances=D, sample_labels=labels)`，向量另提供自己的 `pairs`。普通距离与 beta 结果不能混合输入。
+直接累计时，`CommunityData` 提供固定的群落与物种标签，可以省略树上的未观测物种。矩阵列须覆盖每棵树的完整 tip 集合；`tip_labels` 固定各列含义，省略时由第一棵树的 tip 顺序定义后续所有树的列含义。所有输入物种（包括零列）都须存在于每棵树；未请求的群落也完整校验数值。完整输出使用 `block_size=256` 控制可复用的共享枝列块，均值状态及最终结果仍需平方空间，详见[性能说明](performance_zh.md#后验-beta-直接累计)。
+
+对于 `mean_dist(inputs)`，输出标签默认为首份输入的顺序，可用 `sample_labels` 显式指定完整集合。后续带标签输入可重排或缺少部分群落；未知标签、重名或空名报错。裸矩阵使用统一的输出标签顺序，维度须覆盖完整集合；各自带标签的矩阵写为 `(distances=D, sample_labels=labels)`，向量另提供自己的 `pairs`。普通距离与 beta 结果不能混合输入；所有 beta 结果须为同一种类和同一 Sørensen/Jaccard 指数族。
 
 默认 `nan_policy=:skip` 对每个群落对分别跳过 NaN，只累计有限值。没有有限值时，均值为 NaN、次数为零，空群落或零 PD 群落的未定义对角线也保留。`:propagate` 遇到任意已观测 NaN 就返回 NaN，`counts` 仍报告有限次数；缺少群落或群落对不算一次观测。Inf、负距离、非零有限对角线和不对称矩阵报错。不同 beta 成分的有效次数可能不同，因此分别求均值后不保证仍满足原分解恒等式。
 

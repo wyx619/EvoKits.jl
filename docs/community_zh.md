@@ -106,6 +106,35 @@ expected_pd(tree).expected_pd
 
 矩阵的行表示群落，列表示树的 tip。如果输入列的顺序与树 tip 顺序不同，请提供 `tip_labels`。当距离或多样性未定义时，空群落返回 `NaN`；PD、UniFrac、PhyloSor 和 RaoD 接受单物种群落。
 
+### PD 变体与 bootstrap
+
+`pd_calc(community, tree; variant=:tbl)` 按群落顺序返回 `pd`、`richness` 和规范化的变体名；`pd_calc(tree, tips; variant=...)` 为不重复的 tip 名称或位置返回标量。稠密/CSC 矩阵及 `CommunityData` 均按正丰度解释存在。
+
+| 变体 | 纳入的原始分支 |
+| --- | --- |
+| `:tbl` | 观测 tips 到原树根的全部路径。 |
+| `:mst` | 观测 MRCA 下方的连接分支，排除其上方共有根枝。 |
+| `:ueh` | 恰有一个观测后代的分支。 |
+| `:sbl` | 至少有两个观测后代的分支。 |
+| `:tip` | 观测物种在原树上的末端分支。 |
+
+空群落五项均为零；单物种 MST 为零，UEH 包含整条到根路径，TIP 只包含原始末端边。
+
+```julia
+using Random
+
+variants = pd_calc(data, tree; variant = :ueh)
+draws = pd_bootstrap(data, tree; reps = 99, rng = MersenneTwister(42))
+draws.observed
+draws.replicates              # 群落 × 重复次数
+fixed_richness = pd_bootstrap(tree, 2; reps = 99, method = :MST,
+    tip_weights = [1.0, 2.0, 3.0, 4.0], rng = MersenneTwister(42))
+```
+
+bootstrap 使用指数随机键从完整树 tip 池加权无放回抽样，保留各群落丰富度。权重按树 tip 顺序，转换后须为有限非负 Float64 且至少一项为正，省略时均匀抽样。树输入返回向量；群落输入返回 `PDBootstrapResult`，空群落为零，`include_root=false` 时单物种群落为 NaN，与 `pd` 一致。
+
+权重总和有限时，选中子集及 RNG 消耗保持原完整排序实现的结果；并列按原 tip 位置，零权重随机键为 `-Inf`。若丰富度超过正权重支持数，保留旧实现按索引填入剩余 `-Inf` 项的规则，与 R 拒绝支持数不足的行为不同。各权重有限但求和溢出时，先缩放再归一化。R 与 Julia 对齐抽样分布，不要求跨语言随机流相同。稀疏工作区和有限候选堆替代稠密随机群落及完整排序，耗时和剩余成本见[性能说明](performance_zh.md#pd-变体与-bootstrap)。
+
 ### PSV、PSR 与解析 PD 矩
 
 `psv` 是物种对差异 `(Cii+Cjj)/2-Cij` 的均值。C 默认为 Brownian 相关矩阵；`scale_vcv=false` 使用协方差，此时该差异等于 `patristic / 2`。`psr` 为 PSV 乘群落丰富度。两者直接使用树上统计量，方差也无需 VCV，接受稠密/CSC 输入和 `CommunityData`。

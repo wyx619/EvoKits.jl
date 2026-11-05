@@ -80,8 +80,19 @@ variance is computed separately on the complete original tree. Dense calls
 keep sequential traversal. These plans and workspaces are private.
 
 `expected_pd.jl` defines analytical Bernoulli PD moments and edge abundance.
-These kernels load before `diversity.jl`, which retains PD variants/bootstrap;
-`data_metrics.jl` then adds the input adapters.
+These kernels load before [pd_workspace.jl](../src/community/diversity/pd_workspace.jl),
+which reuses the private species path/site index for sparse PD variants and
+retains dense descendant counts when sequential traversal is cheaper. Its
+sampling workspace keeps only the required best keys or worst-key complement,
+with stable tip-index ties. `diversity.jl` provides the public PD variants and
+bootstrap methods; `data_metrics.jl` then adds the input adapters.
+
+[mean_beta.jl](../src/community/regionalization/mean_beta.jl) loads after
+`mean_dist.jl` and adds the community-plus-tree-iterator overload. It reuses
+the established beta formulas and mean accumulators, while keeping posterior
+tree buffers separate from reusable single-tree contexts. Full output scatters
+sparse branch membership products into one reusable column block; selected
+requests retain only endpoint records and deduplicate unordered pairs.
 
 Keep numerical tests under `test/` and small offline reference tables under
 `test/fixtures/`. Run the affected test files and package-loading checks for
