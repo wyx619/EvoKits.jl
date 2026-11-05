@@ -71,8 +71,16 @@ branch summaries and acquires no additional distance storage.
 `phylogenetic_species.jl` defines PSV/PSR/PSE/PSC/PSD using sparse records and
 tree summaries, including finite-pool variance and shared preparation for PSD.
 It reuses the distinct-target workspace from `community_distances.jl`.
+
+[species_virtual.jl](../src/community/diversity/species_virtual.jl) contracts
+observed connecting trees while retaining original heights and ordered affine
+path transforms. A linear-space heavy-path index builds smaller site trees
+for sparse PSE/PSC queries. PSD builds each site tree once for PSV/PSE/PSC;
+variance is computed separately on the complete original tree. Dense calls
+keep sequential traversal. These plans and workspaces are private.
+
 `expected_pd.jl` defines analytical Bernoulli PD moments and edge abundance.
-Both load before `diversity.jl`, which retains PD variants/bootstrap;
+These kernels load before `diversity.jl`, which retains PD variants/bootstrap;
 `data_metrics.jl` then adds the input adapters.
 
 Keep numerical tests under `test/` and small offline reference tables under

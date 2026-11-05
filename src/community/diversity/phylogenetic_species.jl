@@ -36,7 +36,7 @@ function _psv_geometry(tree, scaled; need_heights = false)
             end
         end
     end
-    return (; factors, offsets, scaled, heights)
+    return (; factors, offsets, down_offsets = offsets, scaled, heights)
 end
 
 # Merge populations using SD rather than an unnormalized sum of squares,
@@ -209,9 +209,10 @@ function _species_abundance_rows(community, tree, tip_labels)
         uniform[row] = all(==(scale), raw[row])
         weights[row] = [_community_distance_ratio(x, scale) for x in raw[row]]
         weights[row] ./= sum(weights[row])
-        if any(iszero, weights[row])
-            # A tiny positive weight may still contribute after multiplication
-            # by a long branch, or after summing many such records.
+        if any(weight -> weight < floatmin(Float64), weights[row])
+            # Zero/subnormal weights lose relative precision in the pair
+            # product, even when the final scaled result is representable.
+            # Long branches or many tiny records can also recover a value.
             values = BigFloat.(raw[row])
             values ./= maximum(values)
             precise[row] = values ./ sum(values)
@@ -281,7 +282,9 @@ Finite abundances are scaled before summation. Branch lengths must be finite,
 nonnegative and have a finite sum; scaled calls need positive tip heights.
 
 Uses sparse records and weighted subtree pair contrasts, without VCV or site
-submatrices. With equal positive abundances PSE equals PSV. Inputs are unchanged.
+submatrices. Sparse calls reuse an observed connecting tree and can extract
+smaller site trees; contracted affine paths preserve the shared root stem.
+With equal positive abundances PSE equals PSV. Inputs are unchanged.
 """
 function pse(community::AbstractMatrix{<:Real}, tree::CompactTree;
     scale_vcv::Bool = true,
@@ -290,7 +293,8 @@ function pse(community::AbstractMatrix{<:Real}, tree::CompactTree;
     _validate_community_branch_lengths(tree)
     rows = _species_abundance_rows(community, tree, tip_labels)
     geometry = _psv_geometry(tree, scale_vcv)
-    values = _pse_values(rows, tree, geometry, zeros(tree.nnodes), zeros(tree.nnodes))
+    plan = _species_plan(rows.tips, tree, geometry)
+    values = _species_pse_values(rows, plan)
     return (pse = values, richness = length.(rows.tips))
 end
 
@@ -323,8 +327,8 @@ function _psc_value!(workspace, tree, tips, geometry)
     for node in tree.preorder
         parent = tree.parent_of_node[node]
         parent == 0 && continue
-        first = geometry.scaled ? geometry.offsets[node] + geometry.factors[node] * d1[parent] : d1[parent]
-        second = geometry.scaled ? geometry.offsets[node] + geometry.factors[node] * d2[parent] : d2[parent]
+        first = geometry.scaled ? geometry.down_offsets[node] + geometry.factors[node] * d1[parent] : d1[parent]
+        second = geometry.scaled ? geometry.down_offsets[node] + geometry.factors[node] * d2[parent] : d2[parent]
         _comdistnt_insert!(workspace, node, first, t1[parent])
         _comdistnt_insert!(workspace, node, second, t2[parent])
     end
@@ -356,9 +360,11 @@ covariance when `scale_vcv=false`; raw PSC may be negative and depends on
 branch-length units. Positive values denote presence. Empty/singleton sites
 give NaN, and zero-length branches can give zero contrast to another species.
 
-Two tree passes retain the nearest two distinct identities without VCV or
-site submatrices. Branch lengths must be finite/nonnegative with finite sum;
-scaled calls need positive tip heights. Inputs are not mutated.
+Two passes on full or observed connecting trees retain the nearest two
+distinct identities without VCV or site submatrices. Original heights and
+stable affine paths preserve raw/scaled definitions under contraction.
+Branch lengths must be finite/nonnegative with finite sum; scaled calls
+need positive tip heights. Inputs are not mutated.
 """
 function psc(community::AbstractMatrix{<:Real}, tree::CompactTree;
     scale_vcv::Bool = true,
@@ -367,16 +373,18 @@ function psc(community::AbstractMatrix{<:Real}, tree::CompactTree;
     _validate_community_branch_lengths(tree)
     rows = _community_tip_rows(community, tree, tip_labels)
     geometry = _psv_geometry(tree, scale_vcv; need_heights = !scale_vcv)
-    return (psc = _psc_values(rows, tree, geometry), richness = length.(rows))
+    plan = _species_plan(rows, tree, geometry)
+    return (psc = _species_psc_values(plan), richness = length.(rows))
 end
 
 """
     psd(community, tree; compute_var=true, scale_vcv=true, tip_labels=nothing)
 
 Combined PSV, variance, PSC, PSR, PSR variance, PSE and richness, in input
-site order. Shares one label/record preparation, tree geometry, full-pool
-variance and reusable workspace; derives PSR from PSV. No full VCV/correlation
-or site submatrix is built, including with `compute_var=true`.
+site order. Shares label/record preparation, tree geometry, observed
+connecting trees and workspace; derives PSR from PSV. Variance uses the
+complete original species pool, including unobserved tips. No full VCV or
+site submatrix is built, including with `compute_var=true`.
 
 Keeps the single-metric definitions, validation and NaN rules. Inputs are
 unchanged; each output field owns its array. Equal-abundance PSE reuses PSV.
@@ -389,11 +397,20 @@ function psd(community::AbstractMatrix{<:Real}, tree;
     _validate_community_branch_lengths(tree)
     rows = _species_abundance_rows(community, tree, tip_labels)
     geometry = _psv_geometry(tree, scale_vcv; need_heights = !scale_vcv)
-    counts, means, scratch = zeros(Int, tree.nnodes), zeros(tree.nnodes), zeros(tree.nnodes)
-    v = _psv_values(rows.tips, tree, geometry, counts, means, scratch; compute_var)
-    evenness = _pse_values(rows, tree, geometry, scratch, means; variability = v.psv)
-    clustering = _psc_values(rows.tips, tree, geometry)
-    return (psv = v.psv, var_psv = v.variance, psc = clustering,
-        psr = v.psv .* v.richness, var_psr = v.variance .* v.richness .^ 2,
-        pse = evenness, richness = v.richness)
+    plan = _species_plan(rows.tips, tree, geometry)
+    if plan.index === nothing && plan.tree isa CompactTree
+        # The original sequential route reuses its full-pool variance scratch
+        # for site moments; allocating a second full workspace would regress
+        # dense inputs without reducing their tree traversal.
+        counts, means, scratch = zeros(Int, tree.nnodes), zeros(tree.nnodes), zeros(tree.nnodes)
+        v = _psv_values(rows.tips, tree, geometry, counts, means, scratch; compute_var)
+        evenness = _pse_values(rows, tree, geometry, scratch, means; variability = v.psv)
+        clustering = _psc_values(rows.tips, tree, geometry)
+        return (psv = v.psv, var_psv = v.variance, psc = clustering,
+            psr = v.psv .* v.richness, var_psr = v.variance .* v.richness .^ 2,
+            pse = evenness, richness = v.richness)
+    end
+    variance_by_richness = compute_var ? _psv_variances(tree, geometry,
+        zeros(Int, tree.nnodes), zeros(tree.nnodes), zeros(tree.nnodes)) : Float64[]
+    return _species_psd_values(rows, plan, variance_by_richness)
 end

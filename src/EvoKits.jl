@@ -169,6 +169,7 @@ include("community/diversity/beta.jl")
 include("community/diversity/taxonomic_beta.jl")
 include("community/diversity/beta_multi.jl")
 include("community/diversity/phylobeta_multi.jl")
+include("community/diversity/species_virtual.jl")
 include("community/diversity/phylogenetic_species.jl")
 include("community/diversity/expected_pd.jl")
 

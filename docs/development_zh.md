@@ -37,4 +37,6 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 
 `phylogenetic_species.jl` 用稀疏记录与树统计量计算 PSV/PSR/PSE/PSC/PSD，包括有限物种池方差及 PSD 共用准备，并复用 `community_distances.jl` 的不同目标身份工作区。`expected_pd.jl` 定义 Bernoulli 模型下的解析 PD 矩与分支丰度；两者先于保留 PD 变体及 bootstrap 的 `diversity.jl` 加载，随后由 `data_metrics.jl` 添加输入适配。
 
+[species_virtual.jl](../src/community/diversity/species_virtual.jl) 在观测物种连接树上保留原始高度及有方向的仿射路径变换，再用线性空间的重链索引为稀疏 PSE/PSC 提取更小的群落树。PSD 为每个群落只建一次连接树，共用 PSV/PSE/PSC 计算；方差单独在完整原树上计算。稠密调用保留顺序遍历，准备结果及工作区均为私有实现。
+
 数值测试继续放在 `test/`，小型离线参考表放在 `test/fixtures/`。结构调整采用相关测试文件和包加载检查。本地验收脚本、历史源码快照保存在受 Git 忽略的 `validation/`；历史 `git show` 命令中的路径对应原提交的目录结构。

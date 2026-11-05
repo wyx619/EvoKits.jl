@@ -386,37 +386,65 @@ sparse PSV input.
 
 ### PSE, PSC and shared PSD
 
-The following comparisons use the same serial protocol, balanced unit-branch
-trees, eight sites and three presences per site with abundances `[1,2,3]`.
-Correlation scaling is enabled, and PSD includes variance:
+PSE/PSC first contract the tree to observed tips and connecting nodes when
+occupancy is low. Contracted edges retain affine path factors and separate
+upward/downward offsets; computing `1-product(factors)` would lose tiny
+contrasts. Original heights preserve shared-root correlation and raw PSC,
+which may be negative. No VCV or site submatrix is constructed.
 
-| Call | Tips | Previous | Current | Previous allocation | Current allocation |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `pse` | 1,024 | 13.3 ms | 0.109 ms | 25.4 MB | 0.111 MB |
-| `psc` | 1,024 | 13.3 ms | 0.162 ms | 25.4 MB | 0.125 MB |
-| `psd`, including variance | 1,024 | 28.6 ms | 0.384 ms | 51.3 MB | 0.235 MB |
+On a sufficiently sparse site, a heavy-path index and ordered segment tree
+extract its own connecting tree, of at most `2r-1` nodes for richness r.
+The index uses `O(v)` storage for v working-tree nodes. Each site costs
+`O(r log r + r log^2 v)` to prepare and `O(r)` to evaluate. Other sites use
+`O(v+r)` sequential traversal. Global preparation is `O(e+q+n+p)` for tree
+nodes e, observed records q, sites n and tips p on CSC input; dense input
+also scans `n*p` values. Auxiliary storage is linear in these dimensions.
 
-Current calls with the same site settings scale as follows. Separate cases
-also cover one site, raw covariance and richness 30/300:
+The global contraction policy is shared with community distances. Site
+extraction requires at least 256 working nodes and `2r-1 <= v/32`;
+denser collections keep original records and sequential traversal. PSD
+prepares each sparse site tree once for PSV/PSE/PSC, reuses moment buffers,
+and reuses PSV for equal-abundance PSE. Its optional variance is calculated
+once on the **complete original species pool**, adding linear tree work and
+storage. Dense PSD also reuses its variance scratch for site moments.
 
-| Shape | Tips | PSE | PSC | PSD, including variance | PSD allocation |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Balanced | 1,000 | 0.105 ms | 0.177 ms | 0.371 ms | 0.230 MB |
-| Balanced | 10,000 | 0.980 ms | 1.24 ms | 3.39 ms | 2.25 MB |
-| Balanced | 100,000 | 21.0 ms | 14.9 ms | 65.9 ms | 22.4 MB |
-| Comb | 100,000 | 20.7 ms | 19.4 ms | 59.9 ms | 22.4 MB |
-| Star | 100,000 | 8.86 ms | 6.95 ms | 28.6 ms | 12.0 MB |
+The comparisons below use the previous sparse full-tree implementation,
+Julia 1.12.7 / i5-12400, one Julia/BLAS thread and the warmed median of three.
+Trees have 100,000 tips with unit branches, 64 sites and three observations
+per site, distributed through the tip order with abundances `[1,2,3]`.
+Correlation scaling is enabled; PSD includes variance. Public-call timings
+include validation, preparation and output:
 
-On the 100,000-tip balanced tree, four separate calls to PSV/PSR/PSE/PSC
-take 107.7 ms / 57.6 MB, versus 65.4 ms / 22.4 MB for PSD. With equal
-abundances, PSD takes 51.8 ms because PSE reuses PSV. Preparing the weighted
-records alone takes 0.215 ms / 0.803 MB; tree geometry takes 2.52 ms / 6.40 MB.
-With prepared geometry and workspace, the internal single-site PSE and PSC
-kernels take 2.30 ms and 1.59 ms, respectively, with zero allocated bytes.
-These internal calls exclude input preparation and full-pool variance and
-do not expose a public prepared context. All figures are cumulative
-allocations, not peak memory. Storage regressions cover both scaling modes
-at 20,000 tips, including PSD's allocation savings over separate calls.
+| Call | Shape | Full-tree baseline | Current | Baseline allocation | Current allocation |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `pse` | Balanced | 150 ms | 5.69 ms | 10.42 MB | 8.20 MB |
+| `pse` | Comb | 164 ms | 6.62 ms | 10.42 MB | 8.21 MB |
+| `pse` | Star | 64.7 ms | 2.78 ms | 5.62 MB | 4.50 MB |
+| `psc` | Balanced | 101 ms | 5.99 ms | 12.01 MB | 8.20 MB |
+| `psc` | Comb | 101 ms | 6.44 ms | 12.01 MB | 8.20 MB |
+| `psc` | Star | 46.8 ms | 3.51 ms | 6.41 MB | 4.50 MB |
+| `psd` | Balanced | 457 ms | 20.2 ms | 22.43 MB | 18.63 MB |
+| `psd` | Comb | 482 ms | 22.0 ms | 22.43 MB | 18.64 MB |
+| `psd` | Star | 195 ms | 9.71 ms | 12.03 MB | 10.13 MB |
+
+Without variance, balanced-tree PSD changes from 440 to 6.31 ms and from
+16.83 to 8.23 MB. Keeping variance therefore has a measurable cost despite
+the small site trees. Separate cases cover 1,000/10,000 tips, eight sites,
+raw covariance and richness 30/300/4,096. Fully occupied 4,096-tip dense
+inputs retain the sequential path. An interleaved check using three batches
+of 16 public calls separates small timing differences from run-order effects.
+Automatic selection does not guarantee a speedup for every input.
+
+Measured separately on the balanced 100,000-tip input, internal preparation
+takes 5.61 ms / 8.15 MB and retains 82.4 KB for records, a 383-node working
+tree and its index. Each three-tip site then needs at most five nodes.
+Evaluating all 64 sites with that internal plan takes 56.9 μs / 53.9 KB for
+PSE or 60.4 μs / 63.2 KB for PSC. These internal measurements exclude
+preparation; public calls above include it. Extremely small abundance
+weights use the existing BigFloat path, including subnormal weights whose
+intermediate pair products would otherwise lose precision. All allocations
+are cumulative, not peak memory. Numerical/storage checks include deep
+20,000-tip combs and a fully observed pool with individually sparse sites.
 
 ## Tree distance precision
 

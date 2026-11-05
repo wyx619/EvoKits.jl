@@ -130,6 +130,8 @@ pse(sparse([2.0 1 0 0]), tree).pse  # [4/9]
 
 `pse` 按相对丰度加权物种对差异；`psc` 为各存在物种到其它物种的最小 `1-Cij` 的均值。原始协方差模式下 PSC 是一减最大共有枝长的均值，可为负，且依赖枝长单位；相关矩阵模式在非超度量树上选中的邻居可能与 patristic 最近物种不同。不同物种间的零长度路径保留。`psd` 一次返回四项指标、PSV/PSR 方差和丰富度，沿用单项调用的定义及 NaN 规则，接受并保留稠密/CSC 与 `CommunityData` 输入；算法及分配开销见[独立性能说明](performance_zh.md#解析多样性矩)。
 
+稀疏数据的 PSE/PSC 使用观测物种连接树，保留原根对相关性和原始协方差的贡献。PSD 为每个群落只建一次连接树，供 PSV/PSE/PSC 共用；方差仍基于包含未观测物种的完整原树物种池。稠密场景保留顺序遍历，复杂度及实测见[独立性能说明](performance_zh.md#psepsc-与-psd-共用计算)。
+
 `expected_pd` 及别名 `pd_variance` 保留另一种模型：每个 tip 以 `richness/tree.ntips` 的概率**独立出现**，richness 是期望物种数。`upper_bound=false` 给出精确 Bernoulli 方差，默认 true 给出 picante 的协方差上界；并非固定样本量稀释曲线。枝长须有限、非负且总和有限；[算法与扩展性](performance_zh.md#解析多样性矩)单独说明。
 
 ### Rao 多样性分解
