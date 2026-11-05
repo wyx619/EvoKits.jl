@@ -102,6 +102,7 @@ end
 """
     comdist(community, tree; abundance_weighted=false, pairs=nothing, tip_labels=nothing)
     comdist(data::CommunityData, tree; abundance_weighted=false, pairs=nothing)
+    comdist(context::CommunityDistanceContext; abundance_weighted=false, pairs=...)
 
 Mean pairwise phylogenetic distance between communities. Rows are sites and
 columns are tree tips; `tip_labels` describes matrix column order. Positive
@@ -121,6 +122,10 @@ otherwise uses full-tree passes. Preparation is linear in tree size, without
 a full tip-distance, dense community or site-pair weight matrix. Full output
 remains quadratic in sites; selected output uses linear space in requests.
 Inputs are not mutated.
+
+Use `prepare_community_distances` to reuse validation, alignment, topology and
+workspace across calls. Context calls operate on their owned snapshot; fixed
+contexts default to their preparation-time pair request.
 """
 function comdist(community::AbstractMatrix{<:Real}, tree::CompactTree;
     abundance_weighted::Bool = false,
@@ -266,6 +271,8 @@ end
     comdistnt(community, tree; abundance_weighted=false,
               exclude_conspecifics=false, pairs=nothing, tip_labels=nothing)
     comdistnt(data::CommunityData, tree; kwargs...)
+    comdistnt(context::CommunityDistanceContext; abundance_weighted=false,
+              exclude_conspecifics=false, pairs=...)
 
 Symmetric mean of the two directional nearest-taxon distances. Matrix rows
 are sites; `tip_labels` describes the column order. Each direction averages
@@ -291,6 +298,9 @@ branches are summed on contracted paths, preserving species identity and
 short distances below long shared stems. CSC input is traversed directly;
 selected computation retains requested endpoints only. No full tip-distance
 matrix or dense community is built. Inputs are not mutated.
+
+`prepare_community_distances` creates a shared snapshot for repeated comdist
+and comdistnt calls, reusing validation, alignment, topology and workspaces.
 """
 function comdistnt(community::AbstractMatrix{<:Real}, tree::CompactTree;
     abundance_weighted::Bool = false,
@@ -310,10 +320,9 @@ function comdistnt(community::AbstractMatrix{<:Real}, tree::CompactTree;
     return _comdistnt_adaptive(rows, tree, selected, abundance_weighted, exclude_conspecifics)
 end
 
-function _comdistnt(rows, tree, weighted, exclude)
+function _comdistnt(rows, tree, weighted, exclude, workspace = _ComdistntWorkspace(tree.nnodes))
     n = length(rows.nodes)
     result = fill(NaN, n, n)
-    workspace = _ComdistntWorkspace(tree.nnodes)
     for target in 1:n
         isempty(rows.nodes[target]) && continue
         _comdistnt_target!(workspace, tree, rows.nodes[target], rows.lengths)

@@ -31,6 +31,10 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 
 `rao.jl` 定义 Rao 熵及其分解，复用 `community_distances.jl` 准备的稀疏记录与分支距离工作区；两者均先于 `data_metrics.jl` 的 `CommunityData` 适配加载。
 
+[comdist_virtual.jl](../src/community/diversity/comdist_virtual.jl) 为 `comdist` 选择整树/压缩树路径并调度指定群落对，一次后序遍历压缩未观测及单分叉路径、累加原始枝长，随后复用共用的两遍距离内核。[comdistnt_virtual.jl](../src/community/diversity/comdistnt_virtual.jl) 复用该连接树，按目标组织双向请求，重复/反向对去重后再合并方向均值。Rao 内部路径继续使用整树遍历。
+
+[distance_context.jl](../src/community/core/distance_context.jl) 在 `CommunityDistanceContext` 中拥有丰度/存在记录、最小距离拓扑及两种工作区，固定对准备仅保留有效端点并缓存双向调度；锁保护共享工作区，结果数组始终独立。原 `CommunityContext` 继续保留存在型分支汇总，不增加距离存储。
+
 `phylogenetic_species.jl` 用稀疏记录与树统计量计算 PSV/PSR/PSE/PSC/PSD，包括有限物种池方差及 PSD 共用准备，并复用 `community_distances.jl` 的不同目标身份工作区。`expected_pd.jl` 定义 Bernoulli 模型下的解析 PD 矩与分支丰度；两者先于保留 PD 变体及 bootstrap 的 `diversity.jl` 加载，随后由 `data_metrics.jl` 添加输入适配。
 
 数值测试继续放在 `test/`，小型离线参考表放在 `test/fixtures/`。结构调整采用相关测试文件和包加载检查。本地验收脚本、历史源码快照保存在受 Git 忽略的 `validation/`；历史 `git show` 命令中的路径对应原提交的目录结构。

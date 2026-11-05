@@ -53,6 +53,21 @@ reusable bounds. Both use existing dependencies and operate on copied scores.
 rows and branch-distance workspace from `community_distances.jl`. Both load
 before `data_metrics.jl` adds the `CommunityData` adapters.
 
+[comdist_virtual.jl](../src/community/diversity/comdist_virtual.jl) selects full or compressed tree traversal for `comdist`
+and schedules requested site pairs. It contracts unobserved/unary paths in
+one postorder pass, summing original edge lengths, and reuses the shared
+two-pass distance kernel. [comdistnt_virtual.jl](../src/community/diversity/comdistnt_virtual.jl)
+reuses that connecting tree and groups both directional queries by target,
+deduplicating repeated/reversed requests before combining the means. Rao's
+internal path retains its full-tree traversal.
+
+[distance_context.jl](../src/community/core/distance_context.jl) owns the
+abundance/presence records, minimal distance topology and both workspaces in
+`CommunityDistanceContext`. Fixed-pair preparation retains only effective
+endpoints and caches both schedules. A lock protects shared workspaces; result
+arrays are always separate. `CommunityContext` retains its presence-only
+branch summaries and acquires no additional distance storage.
+
 `phylogenetic_species.jl` defines PSV/PSR/PSE/PSC/PSD using sparse records and
 tree summaries, including finite-pool variance and shared preparation for PSD.
 It reuses the distinct-target workspace from `community_distances.jl`.

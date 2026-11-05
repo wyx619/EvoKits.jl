@@ -21,9 +21,9 @@ function _comdistnt_pair_plan(rows, selected)
     return (; mapping, jobs, used, npairs)
 end
 
-function _comdistnt_selected(rows, tree, plan, weighted, exclude)
+function _comdistnt_selected(rows, tree, plan, weighted, exclude,
+    workspace = _ComdistntWorkspace(tree.nnodes))
     values = fill(NaN, plan.npairs)
-    workspace = _ComdistntWorkspace(tree.nnodes)
     previous = 0
     for (target, source, pair) in plan.jobs
         if target != previous

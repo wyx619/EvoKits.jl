@@ -57,6 +57,7 @@ export CommunityData
 export community_longtable
 export align_community
 export CommunityContext, prepare_community
+export CommunityDistanceContext, prepare_community_distances
 
 # Community diversity and endemism
 export pd, pd_dataframe
@@ -173,6 +174,7 @@ include("community/diversity/expected_pd.jl")
 
 # Reusable community context and metric adapters
 include("community/core/context.jl")
+include("community/core/distance_context.jl")
 include("community/diversity/diversity.jl")
 include("community/core/data_metrics.jl")
 

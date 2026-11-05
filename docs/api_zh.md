@@ -60,12 +60,16 @@ Newick/NEXUS 格式逐文件识别。NEXUS 的树号只统计 `TREE`/`UTREE` 定
 
 `community_longtable(data)` 返回包含 `table`、`sample_labels`、`species_labels` 的命名元组。表的列为 `sample`、`species`、`value`，每个正值一行，先按物种列序、再按群落行序。重建时使用 `CommunityData(table; sample_labels, species_labels)` 并保留两份完整标签列表，以恢复空维度和原顺序。导出保留丰度及数值类型；重建沿用长表规则，包括 Bool 转 Int 计数。参见[往返示例](community_zh.md#导出长表与重建群落)。
 
-`comdist`、`comdistnt`、`unifrac` 和 `phylosor` 返回普通的 `n x n` `Float64` 矩阵，索引顺序与群落行顺序一致。
+`comdist`、`comdistnt`、`unifrac` 和 `phylosor` 默认返回普通的 `n x n` `Float64` 矩阵，索引顺序与群落行顺序一致。
 
 - `comdist`：两个群落之间的平均成对距离；对角线为包含同种零距离的群落内均值；空群落返回 `NaN`。
 - `comdistnt`：默认对两个方向的最近分类单元距离均值等权合并；`abundance_weighted=true` 时按原群落总丰度合并。默认非空对角线为零；`exclude_conspecifics=true` 时为群落内到不同物种的最近距离均值，单物种群落为 `NaN`。排除按物种身份判定，不排除不同物种之间的零距离。
 - `unifrac`：非加权枝长距离；对角线为零，包括空群落之间的比较。当非空群落跨越正枝长时，空群落与非空群落之间的距离为一。
 - `phylosor`：`2 * shared_PD / (PD1 + PD2)`；非空群落的对角线为一，空群落为零。
+
+`comdist` 和 `comdistnt` 均支持 `pairs`，返回按请求顺序排列的 `Vector{Float64}`，保留重复、反向及自身对，索引对应完整群落行序；空请求返回空向量，仍校验全部输入数值、标签及树枝长。
+
+`prepare_community_distances(matrix_or_data, tree; pairs=nothing)` 返回供两种距离及两种权重模式共用的 `CommunityDistanceContext`；矩阵还可传 `tip_labels`、`sample_labels`，群落标签须唯一且非空。准备时不传群落对，后续默认完整矩阵，也可更换 `pairs`；准备时传群落对则固定向量请求、只保留有效端点，更换请求须重新准备。输入变化不会更新快照；返回数组独立，同一上下文的调用依次使用工作区。参见[重复计算示例](community_zh.md#群落间系统发育距离)。
 
 `raoD` 返回包含 `Dkk`、`Dkl`、`H`、`total`、`alpha`、`beta` 和 `Fst` 的 `RaoDResult`，使用 `patristic / 2`。树须为超度量树（根到 tip 的绝对容差 1e-8），枝长有限、非负且总和有限。丰度加权默认为 true；关闭时仅将群落内组成改为存在物种等权，合并群落及群落间权重仍按原丰度计算。空群落使 alpha/beta/Fst 为 `NaN`，但合并 total 仍可有效。Dkk、Dkl 和 H 各自拥有独立数组，按输入群落顺序排列，详见 [Rao 分解规则与示例](community_zh.md#rao-多样性分解)。
 

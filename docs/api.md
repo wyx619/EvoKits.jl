@@ -82,7 +82,7 @@ abundance and numeric type; reconstruction follows long-table rules, including
 Bool-to-Int counts. See [the round-trip example](community.md#export-a-long-table-and-reconstruct-the-community).
 
 `comdist`, `comdistnt`, `unifrac`, and `phylosor` return ordinary `n x n`
-`Float64` matrices. Matrix indices follow community row order.
+`Float64` matrices by default. Matrix indices follow community row order.
 
 - `comdist`: mean pairwise distance across the two communities. The diagonal
   includes zero self-distances in the within-community mean; an empty site gives `NaN`.
@@ -96,6 +96,21 @@ Bool-to-Int counts. See [the round-trip example](community.md#export-a-long-tabl
   one when the nonempty community spans positive branch length.
 - `phylosor`: `2 * shared_PD / (PD1 + PD2)`. The diagonal is one for a
   nonempty community and zero for an empty community.
+
+Both `comdist` and `comdistnt` accept `pairs`, returning a `Vector{Float64}`
+in request order with repeated, reversed and self pairs retained. Indices
+refer to the complete site order; an empty request returns an empty vector.
+All input values, labels and branch lengths are validated.
+
+`prepare_community_distances(matrix_or_data, tree; pairs=nothing)` creates a
+`CommunityDistanceContext` for both distance functions and both weighting
+modes. Matrix input also accepts `tip_labels` and `sample_labels`; site labels
+must be unique and nonempty. Without preparation-time pairs, context calls
+default to full matrices and allow changing `pairs`. Preparation-time pairs
+fix the vector request for later calls, retaining only its effective endpoints;
+changing that request requires rebuilding. Input edits never update the snapshot.
+Returned arrays are independent; shared-context calls are serialized.
+See [the repeated-call example](community.md#distances-between-communities).
 
 `raoD` returns `RaoDResult` with `Dkk`, `Dkl`, `H`, `total`, `alpha`, `beta`,
 and `Fst`. It uses `patristic / 2` and requires an ultrametric tree (absolute

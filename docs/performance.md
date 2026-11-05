@@ -77,17 +77,48 @@ scaled before normalization to avoid overflowing abundance sums/products.
 
 For n sites, s nonempty targets, p tips, e tree nodes and q observed site–tip
 records, CSC preparation takes `O(nnz+p+n+e)` work, followed by
-`O(s*(e+q)+n^2)` work. Dense preparation scans `n*p` values. Both functions use
-`O(q+p+n+e)` auxiliary storage plus the required `O(n^2)` output; no full
-tip-distance, tip-pair weight, site-by-branch or dense community matrix is built.
-Each target still traverses the full tree. These functions do not currently
-accept selected pairs or a prepared context.
+`O(s*(e+q)+n^2)` work for the full-tree route. Dense preparation scans `n*p`
+values. No full tip-distance, tip-pair weight, site-by-branch or dense community
+matrix is built. Both functions can reuse a compressed connecting tree within
+the call. `prepare_community_distances` also retains prepared records,
+topology and workspaces for repeated calls.
 
-Local comparisons with the previous Julia path used balanced unit-branch trees,
+Both functions can contract the tree once to their u observed tips and connecting
+nodes, retaining at most `2u-1` nodes. A linear postorder pass removes
+unobserved subtrees and contracts unary paths by adding original edge lengths.
+The common stem above the observed LCA is discarded. This gives cancellation
+safe segments on deep combs without constructing a binary LCA index or sorting
+tip IDs. Each function's two-pass kernel then visits only the compressed tree.
+
+With `pairs`, validation still covers the full input, while row preparation
+retains requested endpoints only. Unordered pairs are deduplicated;
+`comdist` groups canonical targets, while `comdistnt` schedules both directional
+queries by target. Each needed target is traversed once and each unique pair
+is evaluated once; reversed/repeated values are identical. Endpoints
+paired only with empty sites do not enlarge the connecting tree. Let k be
+the number of requests, t the number of distinct valid canonical targets,
+qR the retained records and v the working tree size. After preparation and
+`O(e+qR)` contraction, selected work is `O(k log k+t*v+P+k)`, where P sums
+the source-site richness over unique directional queries (`comdistnt` visits
+both directions). Auxiliary storage is
+`O(p+n+e+qR+k+v)`, and output is a length-k vector. Full output still needs
+`O(n^2)` storage and `O(t*(v+q)+n^2)` work after preparation.
+
+The automatic route uses compression for trees of at least 256 nodes when
+`2u-1 <= e/4`, tightened to `e/16` for a single target. Serial calibration
+compares both routes over tree shapes, site counts and occupancy; dense
+occupancy stays on the full-tree route to avoid compression allocations.
+Occupancy checking stops once the compression threshold has been exceeded,
+avoiding scans of remaining repeated records on dense inputs.
+The policy is conservative and does not claim the fastest route for every
+dataset. Each direct matrix/data call still scans the original tree/input;
+prepared-context calls reuse that work.
+
+Earlier dense-to-sparse comparisons used balanced unit-branch trees,
 eight observed species per site, one Julia/BLAS thread and the median of three
 measurements after warm-up:
 
-| Call | Sites × tips | Previous | Current | Previous allocation | Current allocation |
+| Call | Sites × tips | Dense path | Sparse tree passes | Dense allocation | Sparse allocation |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Weighted `comdist` | 8 × 1,024 | 354 ms | 0.191 ms | 613 MB | 0.129 MB |
 | Weighted `comdistnt` | 24 × 2,048 | 53.3 ms | 0.613 ms | 66.5 MB | 0.166 MB |
@@ -96,6 +127,9 @@ These small synthetic cases demonstrate the removed overhead; timings depend
 on tree shape, site count and occupancy. Allocations are cumulative, not peak
 memory. Separate storage regressions check 12 sites, 20,000 tips and 36 stored
 values against a 15 MB allocation bound after compilation for each function.
+Selected-pair storage also checks 6,000 sites × 40,000 tips with 18,000 stored
+values: four requests retain 12 endpoint records and a 13-node star, under a
+10 MB cumulative-allocation bound. These are regression bounds, not peak memory.
 
 ### Comdist virtual trees and selected pairs
 
@@ -130,7 +164,8 @@ Measured separately on the same balanced input, record preparation takes
 0.330 ms / 0.820 MB and contraction to 383 nodes takes 0.603 ms / 0.842 MB.
 With already allocated workspaces, one target pass takes 4.67 ms on the full
 tree and 0.00640 ms on the compressed tree; both allocate zero bytes. These
-internal passes exclude preparation; each direct call also prepares its records, tree and workspaces.
+internal passes exclude preparation; the public context described below
+retains the complete preparation and workspaces.
 
 Direct matrix/data calls still require linear preparation, and complete
 matrices retain quadratic output storage. Denser cases
@@ -171,13 +206,82 @@ takes 0.329 ms / 0.820 MB and contraction to 383 nodes takes
 0.600 ms / 0.842 MB. With prepared workspaces, one target pass takes
 1.21 ms on the full tree and 0.00480 ms on the compressed tree, both with
 zero allocated bytes. These passes exclude preparation and directional
-source averaging; each direct call also prepares its records, tree and workspaces.
+source averaging; the public context reuses preparation and workspaces.
 
 Sparse large-tree improvements do not imply a speedup for every input.
 The 1,000-tip star with 64 sites stays on the full route; without exclusion
 it changed from 0.448 to 0.470 ms. Full output still needs quadratic storage,
 and each direct matrix/data call still validates/prepares the complete original input.
 All allocations are cumulative, not peak memory.
+
+### Prepared community distances
+
+`prepare_community_distances` snapshots aligned abundance/presence records,
+one working topology and both distance workspaces. It retains
+`O(n+qR+v+k)` storage for sites, retained observations, working-tree nodes
+and fixed requests. The original matrix/tree and their full indices are not
+retained. Dense collections may keep the full topology; sparse collections
+can keep a compressed one. Unlike `CommunityContext`, no per-site branch
+sets or occupancy summaries are prepared for these distances.
+
+Complete repeated calls cost `O(t*(v+qR)+n^2)` including new output. Fixed-pair
+calls cost `O(t*v+P+k)`, with cached ordering and directional schedules.
+Changing pair requests on a complete context still costs `O(k log k+n)` to
+schedule, but reuses its records, topology and workspaces. Such requests use
+the topology for the complete prepared collection; preparing fixed pairs
+can reduce the working tree further when only a few endpoints are needed.
+
+Preparation validates the full input once and owns copied values/topology.
+Repeated calls validate only new pair arguments. A lock serializes calls
+sharing the workspaces, and every result array is independent. Complete
+outputs still require quadratic storage, and preparing both weighting modes
+and workspaces costs time and retained memory up front.
+
+The following public-call comparisons use the same serial protocol,
+100,000 tips, 64 sites and three observations per site with abundances
+`[1,2,3]`. Weighting is enabled; nearest distance also excludes conspecifics.
+The direct baseline already includes automatic tree compression. Reused
+times exclude the one-time preparation:
+
+| Shape | Call | Direct | Reused | Direct allocation | Reused allocation |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Balanced | `comdist` | 1.17 ms | 0.235 ms | 1.74 MB | 0.0329 MB |
+| Balanced | `comdistnt` | 1.17 ms | 0.227 ms | 1.73 MB | 0.0329 MB |
+| Comb | `comdist` | 1.19 ms | 0.256 ms | 1.74 MB | 0.0329 MB |
+| Comb | `comdistnt` | 1.10 ms | 0.260 ms | 1.73 MB | 0.0329 MB |
+| Star | `comdist` | 0.622 ms | 0.0966 ms | 1.31 MB | 0.0329 MB |
+| Star | `comdistnt` | 0.667 ms | 0.156 ms | 1.30 MB | 0.0329 MB |
+
+On the balanced input, fixing four requests during preparation retains
+23 working-tree nodes. The requests are `[(1,64),(3,4),(4,3),(1,1)]`;
+the chain connects all adjacent site indices:
+
+| Request | Call | Direct | Reused | Direct allocation | Reused allocation |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Four | `comdist` | 0.986 ms | 6.40 μs | 1.64 MB | 96 B |
+| Four | `comdistnt` | 0.952 ms | 7.70 μs | 1.65 MB | 176 B |
+| Chain, 63 | `comdist` | 1.16 ms | 192 μs | 1.71 MB | 576 B |
+| Chain, 63 | `comdistnt` | 1.11 ms | 139 μs | 1.71 MB | 1,152 B |
+
+Changing a single pair on the complete prepared context, whose topology
+has 383 nodes, takes 10.7 μs / 240 B for `comdist` and
+12.8 μs / 640 B for `comdistnt`. This still reuses preparation but builds
+fresh request schedules. A separately prepared fixed single pair retains
+11 nodes instead.
+
+Measured separately on that balanced input, complete preparation takes
+0.978 ms / 1.75 MB cumulative allocation and retains 80.0 KB, including
+both distance workspaces and weighting modes. Fixed-four preparation takes
+1.13 ms / 1.67 MB and retains 19.8 KB. These are one-time preparation costs;
+retained object sizes exclude the original input/tree and are not peak memory.
+
+Dense cases retain most tree work. On a fully occupied 4,096-tip balanced
+tree with eight sites, `comdist` changes from 1.48 to 0.857 ms and
+`comdistnt` from 2.34 to 1.80 ms; reused allocation is 592 B each. Preparing
+that complete dense context takes 2.87 ms / 4.93 MB and retains 2.59 MB.
+All figures measure cumulative allocations, not peak memory. Reuse is
+intended for repeated analysis; preparation and retained storage must also
+be counted when evaluating one or a few calls.
 
 ## Rao diversity partition
 

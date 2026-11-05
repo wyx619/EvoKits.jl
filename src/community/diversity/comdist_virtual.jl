@@ -72,10 +72,9 @@ function _comdist_use_virtual(rows, tree, targets)
     return true
 end
 
-function _comdist_selected(rows, tree, selected, order)
+function _comdist_selected(rows, tree, selected, order, workspace = _ComdistWorkspace(tree.nnodes))
     result = fill(NaN, length(selected))
     isempty(order) && return result
-    workspace = _ComdistWorkspace(tree.nnodes)
     last_target, last_source, value = 0, 0, NaN
     for output in order
         target, source = minmax(selected[output]...)

@@ -37,7 +37,7 @@ end
 # tree, supplies zero columns for unrepresented tips, and owns its arrays.
 for metric in (:pd, :pd_dataframe, :phylo_endemism, :relative_pd, :phylobeta, :phylobeta_multi,
     :ses_pd, :ses_pd_dataframe, :ses_mpd, :ses_mpd_dataframe,
-    :ses_mntd, :ses_mntd_dataframe, :prepare_community)
+    :ses_mntd, :ses_mntd_dataframe, :prepare_community, :prepare_community_distances)
     @eval function $metric(data::CommunityData, tree::CompactTree; kwargs...)
         _community_data_keywords(kwargs)
         aligned = _community_tree_data(data, tree)
