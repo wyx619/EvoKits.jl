@@ -1,48 +1,44 @@
 # 源码组织
 
-[首页](../README_zh.md) · [English](development.md)
+[文档目录](README_zh.md) · [首页](../README_zh.md) · [English](development.md)
 
-EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共导出，并按依赖顺序加载源码。子目录用于按职责组织同一模块内的文件，公共名称与调用方式保持一致。
+EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 按功能分组导出公共名称，并按依赖顺序加载源码。子目录用于组织同一模块内的职责，不引入子模块。
 
-入口文件按功能分组导出，结果类型紧邻对应函数。NRI/NTI 和 SES 归入空模型与群落结构；系统发育信号和保护指标各自独立成组。源码加载区按依赖阶段标注，一个阶段可以跨越多个目录。MKL 保持为首个加载的依赖。
+## 查找实现
 
-| 目录 | 职责 | 代表源码 |
-|---|---|---|
-| `base/` | 共用标签、树表示、读写及数值辅助 | [labels.jl](../src/base/labels.jl) |
+| `src/` 下的目录 | 职责 | 入口 |
+| --- | --- | --- |
+| `base/` | 共用标签、树表示、读写及数值辅助 | [labels.jl](../src/base/labels.jl)、[tree_io.jl](../src/base/tree_io.jl) |
 | `tree/queries/` | 校验、查询、距离与谱系分组 | [clade_groups.jl](../src/tree/queries/clade_groups.jl) |
-| `tree/operations/` | 修剪、变换、多分叉处理、时间切片与补全 | [phylobuilder.jl](../src/tree/operations/phylobuilder.jl) |
-| `tree/mapping/` | 节点/边身份映射及 R/ape 编号 | [mapping.jl](../src/tree/mapping/mapping.jl) |
+| `tree/operations/` | 修剪、变换、时间切片、补全与抽样 | [phylobuilder.jl](../src/tree/operations/phylobuilder.jl) |
+| `tree/mapping/` | 节点/边身份及 R/ape 编号 | [mapping.jl](../src/tree/mapping/mapping.jl) |
 | `tree/metrics/` | 进化独特性与树形指标 | [metrics.jl](../src/tree/metrics/metrics.jl) |
 | `traits/` | 性状对齐与系统发育信号 | [alignment.jl](../src/traits/alignment.jl) |
-| `community/core/` | 群落输入、长表导出、分支遍历、上下文与指标适配 | [input.jl](../src/community/core/input.jl)、[longtable.jl](../src/community/core/longtable.jl) |
-| `community/diversity/` | PD、MPD/MNTD、群落间距离、特有性、Rao 及 beta 多样性 | [community_distances.jl](../src/community/diversity/community_distances.jl)、[rao.jl](../src/community/diversity/rao.jl)、[beta.jl](../src/community/diversity/beta.jl) |
-| `community/aggregation/` | 物种/谱系聚合、功能分组与组数选择 | [functional_beta.jl](../src/community/aggregation/functional_beta.jl) |
-| `community/regionalization/` | 分区、连接法评估、平均距离、NMDS 与指示物种 | [regionalization.jl](../src/community/regionalization/regionalization.jl) |
+| `community/core/` | 输入、长表导出、分支汇总、上下文与适配 | [input.jl](../src/community/core/input.jl)、[data_metrics.jl](../src/community/core/data_metrics.jl) |
+| `community/diversity/` | PD、物种多样性、距离、特有性、Rao 及 beta | [community_distances.jl](../src/community/diversity/community_distances.jl)、[phylogenetic_species.jl](../src/community/diversity/phylogenetic_species.jl) |
+| `community/aggregation/` | 性状/物种/谱系分组与功能 beta | [functional_beta.jl](../src/community/aggregation/functional_beta.jl) |
+| `community/regionalization/` | 聚类、GoM、后验均值、NMDS 与指示物种 | [regionalization.jl](../src/community/regionalization/regionalization.jl) |
 | `community/null_models/` | 随机化、SES、beta SES 与 NRI/NTI | [ses.jl](../src/community/null_models/ses.jl) |
 | `community/conservation/` | EDGE/EDGE2、热点/冷点与数值分级 | [conservation.jl](../src/community/conservation/conservation.jl) |
 
-共用标签校验位于 `base/labels.jl`：将非空字符串或整数标识符转换为唯一字符串标签，沿用已有默认标签与报错规则。树补全与群落输入使用同一套辅助函数。base 和 tree 先于 traits、community 加载，因此 `phylobuilder` 可在群落定义加载前独立使用。群落文件之间的依赖决定加载顺序，同一子目录的文件不要求连续加载。
+## 加载与共用机制
 
-`base/tree_stream.jl` 切分记录并解析 Newick 树体，`base/tree_nexus.jl` 处理 NEXUS 块、命令和叶标签翻译，`tree/operations/tree_sampling.jl` 通过两遍扫描抽样，仅解析抽中的记录。这些文件均先于 traits 和 community 加载，不依赖群落层。
+MKL 先于其他依赖加载，base 和 tree 先于 traits、community。共用标签校验位于 `base/labels.jl`，树补全因此可独立于群落输入使用。加载阶段可以跨目录，同目录文件不要求连续加载。
 
-`gom.jl` 提供固定 k 混合归属结果及指示物种适配，`gom_fit.jl` 实现稀疏似然/EM 累计和有目标上升保护的对数比加速，使用现有 Julia 依赖。
+| 跨功能共用内容 | 文件 |
+| --- | --- |
+| 树流切分、NEXUS 命令及选中树抽样 | [tree_stream.jl](../src/base/tree_stream.jl)、[tree_nexus.jl](../src/base/tree_nexus.jl)、[tree_sampling.jl](../src/tree/operations/tree_sampling.jl) |
+| PD/PE/beta 的存在型分支集合与占据统计 | [branches.jl](../src/community/core/branches.jl)、[context.jl](../src/community/core/context.jl) |
+| 稀疏记录、自动连接树与距离复用 | [community_distances.jl](../src/community/diversity/community_distances.jl)、[comdist_virtual.jl](../src/community/diversity/comdist_virtual.jl)、[distance_context.jl](../src/community/core/distance_context.jl) |
+| PSV/PSE/PSC 及 PD 变体的群落树 | [species_virtual.jl](../src/community/diversity/species_virtual.jl)、[pd_workspace.jl](../src/community/diversity/pd_workspace.jl) |
+| 既有距离与后验 beta 的均值累计 | [mean_dist.jl](../src/community/regionalization/mean_dist.jl)、[mean_beta.jl](../src/community/regionalization/mean_beta.jl) |
 
-`nmds_alignment.jl` 按共同标签计算正交 Procrustes 变换；`nmds_colors.jl` 将坐标映射到 phyloregion 固定色板，并保存可复用范围。两者均使用现有依赖，在独立坐标副本上操作。
+群落适配在调用的内核之后加载。Rao 复用距离记录/拓扑；PSD 共用群落准备；直接后验 beta 复用均值累计器，但逐树缓冲区独立于单树上下文。算法与复杂度见[性能说明](performance_zh.md)，快照/排序约定见 [API 约定](api_zh.md)。
 
-`base/tree_io.jl` 以迭代遍历构造 `CompactTree`：从右向左做前序遍历，反向填入后序数组，复用遍历栈，保留原来从左到右的孩子顺序，消除深树后序递归。
+## 修改与验证
 
-`rao.jl` 定义 Rao 熵及其分解，复用 `community_distances.jl` 准备的稀疏记录与分支距离工作区；两者均先于 `data_metrics.jl` 的 `CommunityData` 适配加载。
-`pairwise=false` 路径仅计算对角线及合并群落，复用同一工作区和结果类型，群落对矩阵留空。
-`_rao_prepare` 先按原丰度合并，再将群落及合并行共同映射到既有连接树；`_rao_result` 在所选拓扑上共用两种输出模式，公共参数和结果类型不变。
+数值测试放在 `test/`，小型离线 R 参考表放在 `test/fixtures/`，来源由各 fixture README 说明；普通测试不应要求安装 R 或联网。
 
-[comdist_virtual.jl](../src/community/diversity/comdist_virtual.jl) 为 `comdist` 选择整树/压缩树路径并调度指定群落对，一次后序遍历压缩未观测及单分叉路径、累加原始枝长，随后复用共用的两遍距离内核。[comdistnt_virtual.jl](../src/community/diversity/comdistnt_virtual.jl) 复用该连接树，按目标组织双向请求，重复/反向对去重后再合并方向均值。Rao 复用同一覆盖率选择器及连接树构造器，高覆盖率时保留整树遍历，全部输入先在原树校验。
+行为改动运行相关模块测试。目录调整增加包加载及依赖模块检查；文档改动检查相对链接、中英文一致性和修改后的示例，源码未变时无需重跑完整数值测试。用法更新专题指南，约定更新 `api_zh.md`，成本更新 `performance_zh.md`。
 
-[distance_context.jl](../src/community/core/distance_context.jl) 在 `CommunityDistanceContext` 中拥有丰度/存在记录、最小距离拓扑及两种工作区，固定对准备仅保留有效端点并缓存双向调度；锁保护共享工作区，结果数组始终独立。原 `CommunityContext` 继续保留存在型分支汇总，不增加距离存储。
-
-`phylogenetic_species.jl` 用稀疏记录与树统计量计算 PSV/PSR/PSE/PSC/PSD，包括有限物种池方差及 PSD 共用准备，并复用 `community_distances.jl` 的不同目标身份工作区。`expected_pd.jl` 定义 Bernoulli 模型下的解析 PD 矩与分支丰度；随后加载 [pd_workspace.jl](../src/community/diversity/pd_workspace.jl)，为稀疏 PD 复用私有物种路径/群落连接树索引，密集输入保留顺序后代计数。抽样工作区保留所需最优随机键或最差键的补集，并列按原 tip 位置处理。`diversity.jl` 提供 PD 变体及 bootstrap 公共方法，`data_metrics.jl` 添加输入适配。
-
-[mean_beta.jl](../src/community/regionalization/mean_beta.jl) 在 `mean_dist.jl` 后加载，增加群落数据与树迭代器的直接累计方法，复用既有 beta 公式和均值累计函数。后验树缓冲区不放入单树上下文；完整输出把稀疏分支成员乘积直接累计到一个可复用列块，指定请求只保留端点记录并去重无序对。两个均值入口共用 `_mean_dist_state`：sums/counts 保留为完整输出矩阵，scales/corrections 使用含对角线的压缩下三角；列偏移区分输出与工作区下标，收尾原地归一化并镜像，不新建替代矩阵。指定对仍为四份一维状态。
-
-[species_virtual.jl](../src/community/diversity/species_virtual.jl) 在观测物种连接树上保留原始高度及有方向的仿射路径变换，再用线性空间的重链索引为稀疏 PSV/PSR/PSE/PSC 提取更小的群落树。`_species_psv_values` 只求 PSV 矩，保留原始记录的丰富度，方差使用完整原树物种池的预计算结果；PSR 调用 PSV。PSD 为每个群落只建一次连接树，共用 PSV/PSE/PSC 计算。稠密调用保留顺序遍历，并复用完整池方差工作数组，准备结果及工作区均为私有实现。
-
-数值测试继续放在 `test/`，小型离线参考表放在 `test/fixtures/`。结构调整采用相关测试文件和包加载检查。本地验收脚本、历史源码快照保存在受 Git 忽略的 `validation/`；历史 `git show` 命令中的路径对应原提交的目录结构。
+本地验收脚本、历史快照和详细验收记录放在受忽略的 `validation/`，不作为公开 API 或文档依赖。历史 Git 路径对应原提交的目录结构。

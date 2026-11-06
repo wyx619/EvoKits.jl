@@ -1,252 +1,171 @@
 # API conventions
 
-[Home](../README.md) · [简体中文](api_zh.md)
+[Documentation](README.md) · [Home](../README.md) · [简体中文](api_zh.md)
 
-A combined example, ordering and result contracts, and boundary behavior.
+On this page: [Ordering](#shared-ordering) · [Matrices](#matrix-semantics) · [Community results](#community-result-types) · [Other results](#grouping-and-conservation-results) · [Trait results](#trait-result-types) · [Boundaries](#boundary-policies)
+
+Use this page to check ordering, result shapes and boundary behavior. Models
+and examples are in the [task guides](README.md); algorithm costs and measured
+performance are in the [performance guide](performance.md).
 
 ## End-to-End Example
 
-This example combines tree, community and trait analysis in one session:
-
-```julia
-using EvoKits
-using Random
-
-tree = mktempdir() do dir
-    path = joinpath(dir, "example.nwk")
-    write_tree(path, "((A:1,B:1):1,(C:1,D:1):1);")
-    read_tree(path)
-end
-
-community = [
-    1 1 0 0
-    0 1 1 0
-]
-pd_result = pd(community, tree)
-beta = phylosor(community, tree)
-rao = raoD(community, tree)
-
-trait = [1.0, 2.0, 3.0, 4.0]
-pic = phylogenetic_contrasts(tree, trait)
-signal = phylogenetic_signal_k(tree, trait;
-    permutations = 99, rng = MersenneTwister(7))
-
-pd_result.pd
-beta[1, 2]
-rao.Dkk
-pic.contrasts
-signal.k
-```
+The [quick start](../README.md#quick-start) combines labeled community input,
+PD, PE and regionalization. See [community inputs](community_input.md) for
+constructors and [phylogenetic signals](signals.md) for trait analysis.
 
 ## Public API Contract
+
+### Shared Ordering
+
+| Input or result | Ordering |
+| --- | --- |
+| Tree | `tree.tip_labels` is the canonical tip order. Tip positions are `1:tree.ntips`; compact node IDs are `1:tree.nnodes`. |
+| Community matrix | Rows are sites, columns are species. Without `tip_labels`, columns follow tree-tip order. With it, labels describe input columns and those columns are aligned to the tree. Direct matrix calls require all tree tips. |
+| `CommunityData` | Species align by name; omitted tree species receive zero columns. Unknown species fail, including all-zero columns. Site order is preserved. |
+| Trait vector | Follows tree-tip order unless `tip_labels` describes a different input order. |
+| Site result | Vectors and matrix axes retain input site order unless an explicit subset is requested. |
+
+Community values must be finite nonnegative real numbers. Positive values
+denote presence; abundance-weighted functions use their magnitudes. Labels
+must be unique and nonempty. Integer identifiers become strings. Tip-label
+lookup uses `tree.tipname_to_id`; a node ID is not a tip position.
+
+Constructors and preparation functions own their arrays. Treat context fields
+as read-only snapshots; rebuild after changing inputs. Returned metric arrays
+can be modified independently. See [context selection](community_input.md#repeated-analyses)
+and the [distance-context contract](community_distances.md#distances-between-communities).
+
+### Matrix Semantics
+
+| Function | Default output and diagonal | Selected `pairs` |
+| --- | --- | --- |
+| `comdist` | `n×n` mean cross-species distances; diagonal includes zero self-distances and is generally nonzero | Vector in request order |
+| `comdistnt` | `n×n` symmetric nearest-taxon means; nonempty diagonal zero by default; exclusion gives within-site nearest-other-species means | Vector in request order |
+| `unifrac` | `n×n` branch dissimilarities; diagonal zero | Use `phylobeta` for selected beta pairs |
+| `phylosor` | `n×n` branch similarities; diagonal one for positive PD, zero for zero PD | Use `phylobeta` for selected beta pairs |
+| `beta_diss`, `phylobeta` | Three symmetric `n×n` component arrays | Three vectors in request order |
+| `phylobeta_ses` | Symmetric observed/null/SES arrays | Vectors in request order |
+| `mean_dist` | Symmetric distances and finite-observation counts | Vectors in request order |
+
+`pairs` use complete input site indices; repeated, reversed and self pairs
+are retained. Empty requests return empty vectors and still validate inputs.
+Matrix-returning calls use ordinary `Float64` arrays; count arrays are integers.
+See [distance definitions](community_distances.md), [beta decomposition](community.md#endemism-relative-pd-and-beta-decomposition)
+and [null models](null_models.md).
+
+`community_longtable(data)` returns `(table, sample_labels, species_labels)`.
+The table contains `sample`, `species`, `value`, with one row per positive
+cell in species-then-site order. Preserve both complete label lists to retain
+empty sites and all-zero species on [reconstruction](community_input.md#export-a-long-table-and-reconstruct-the-community).
+
+### Community Result Types
+
+| Function | Result | Main fields |
+| --- | --- | --- |
+| `pd` | `PDResult` | `sample_labels`, `pd`, `richness`, `include_root` |
+| `weighted_endemism` | `WeightedEndemismResult` | `sample_labels`, `we`, `richness`, `species_occupancy` (input species order) |
+| `phylo_endemism` | `PhyloEndemismResult` | `sample_labels`, `pe`, `richness`, `branch_occupancy` (tree edge order), `weighted` |
+| `relative_pd` | `RelativePDResult` | `sample_labels`, `rpd`, `pd_normalized`, `pd_equal_normalized`, `richness`, `total_branch_length`, `positive_branch_count` |
+| `psv` | `PSVResult` | `psv`, `richness`, `variance`, `scale_vcv` |
+| `psr`, `pse`, `psc` | Named tuples | Metric array and `richness`; PSR also returns `variance` |
+| `psd` | Named tuple | `psv`, `var_psv`, `psc`, `psr`, `var_psr`, `pse`, `richness` |
+| `expected_pd`, `pd_variance` | `ExpectedPDResult` | `richness`, `expected_pd`, `variance_pd`, `upper_bound` |
+| `raoD` | `RaoDResult` | Within-site `Dkk`, pairwise `Dkl`/`H`, pooled `total`, `alpha`, `beta`, `Fst` |
+| `pd_calc` | Scalar for tree/tip subset; named tuple for communities | `pd`, `richness`, normalized `variant` |
+| `pd_bootstrap` | Vector for tree/richness; `PDBootstrapResult` for communities | `observed`, sites × reps `replicates`, `richness` |
+| `beta_diss`, `phylobeta` | `BetaDissResult`, `PhylobetaResult` | `sample_labels`, `total`, `turnover`, `nestedness`, `index_family`, `pairs` |
+| `beta_multi` | `BetaMultiResult` | Scalar components, `index_family`, selected `sample_labels`, original `sample_indices`, `richness`, `pooled_richness` |
+| `phylobeta_multi` | `PhylobetaMultiResult` | Scalar components, `index_family`, selected `sample_labels`, original `sample_indices`, `richness`, rooted `pd`, selected-union `pooled_pd` |
+| `ses_pd`, `ses_mpd`, `ses_mntd` | Typed site SES results | `sample_labels`, `ntaxa`, prefixed observed/null/rank/z/p arrays and run settings; MPD/MNTD also supply `mpd_nri`/`mntd_nti` |
+| `phylobeta_ses` | `PhylobetaSESResult` | `sample_labels`, `richness`, `observed`, `null_mean`, `null_sd`, `z_score`, `p_value`, `valid_replicates`, `pairs` and run settings |
+
+`expected_pd` defaults to `1:tree.ntips`; `richness` accepts an integer or an
+integer vector/range within that interval. All three result arrays preserve
+request order and duplicates, including one-element and empty requests.
+Its independent-occurrence model differs from the fixed-size sampling model
+of PSV variance; see [diversity moments](community.md#psv-psr-and-analytical-pd-moments).
+
+`raoD(...; pairwise=false)` returns independent `0×0` `Dkl`/`H` matrices;
+`Dkk` and the four scalars keep their definitions. See [Rao partition rules](community.md#rao-diversity-partition).
+Multiple-site beta returns an overall scalar decomposition, not an average
+of pairwise beta.
 
 ### Posterior tree input
 
 `read_trees(paths; burnin=0, thin=1)` returns a single-pass `TreeStream` of
-`CompactTree`s; its do-block closes files on early exit. `tree_sampler` returns
-an iterable `TreeSampleResult`, with independent trees and draw-order indices,
-source paths, per-file record numbers and line numbers. Filtering is per file;
-sampling is uniform across all eligible records, with replacement by default.
-Newick/NEXUS detection is per file. NEXUS indices count only `TREE`/`UTREE`
-definitions; translation tables apply within their own `TREES` block.
-See [tree input](trees.md#posterior-tree-streams-and-samples) for format and error rules.
+`CompactTree`s. Use its do-block to close files even on early exit. Filtering
+and Newick/NEXUS detection are per file. NEXUS record numbers count only
+`TREE`/`UTREE` definitions; translations apply within their `TREES` block.
 
-### Shared Ordering
-
-`tree.tip_labels` is the canonical tip order. A tip position is an integer in
-`1:tree.ntips`; a compact node ID is an integer in `1:tree.nnodes`. Functions
-that accept labels resolve them through `tree.tipname_to_id`.
-
-Community matrices use rows as communities and columns as tips. Row order is
-preserved in every returned vector or matrix. `tip_labels` describes the input
-column order and reorders columns into `tree.tip_labels` order; it does not
-rename or reorder community rows. Duplicate, missing, or unknown labels raise
-`ArgumentError`.
-
-Community values must be finite and non-negative. Values greater than zero
-indicate presence; abundance-weighted methods use positive values as weights.
-
-Trait vectors are aligned to tree order by default. When `tip_labels` is
-provided, it describes the order of the supplied trait vector and the vector
-is reordered to `tree.tip_labels`. Missing and non-finite trait values are
-rejected by K and PIC.
-
-### Matrix Semantics
-
-`community_longtable(data)` exports a named tuple of `table`, `sample_labels`,
-and `species_labels`. The table has one row per positive value, with `sample`,
-`species`, and `value` columns in species-then-site order. Preserve both full
-label lists when reconstructing with `CommunityData(table; sample_labels,
-species_labels)` to retain empty domains and original order. Values preserve
-abundance and numeric type; reconstruction follows long-table rules, including
-Bool-to-Int counts. See [the round-trip example](community.md#export-a-long-table-and-reconstruct-the-community).
-
-`comdist`, `comdistnt`, `unifrac`, and `phylosor` return ordinary `n x n`
-`Float64` matrices by default. Matrix indices follow community row order.
-
-- `comdist`: mean pairwise distance across the two communities. The diagonal
-  includes zero self-distances in the within-community mean; an empty site gives `NaN`.
-- `comdistnt`: equal mean of the two directional nearest-taxon means, or a mean
-  weighted by original site totals with `abundance_weighted=true`. Nonempty
-  diagonals are zero by default. With `exclude_conspecifics=true`, diagonals
-  are within-site nearest-other-species means (a singleton gives `NaN`).
-  Exclusion uses species identity; distinct species at distance zero remain eligible.
-- `unifrac`: unweighted branch-length distance. The diagonal is zero,
-  including an empty-versus-empty comparison; an empty-versus-nonempty pair is
-  one when the nonempty community spans positive branch length.
-- `phylosor`: `2 * shared_PD / (PD1 + PD2)`. The diagonal is one for a
-  nonempty community and zero for an empty community.
-
-Both `comdist` and `comdistnt` accept `pairs`, returning a `Vector{Float64}`
-in request order with repeated, reversed and self pairs retained. Indices
-refer to the complete site order; an empty request returns an empty vector.
-All input values, labels and branch lengths are validated.
-
-`prepare_community_distances(matrix_or_data, tree; pairs=nothing)` creates a
-`CommunityDistanceContext` for both distance functions and both weighting
-modes. Matrix input also accepts `tip_labels` and `sample_labels`; site labels
-must be unique and nonempty. Without preparation-time pairs, context calls
-default to full matrices and allow changing `pairs`. Preparation-time pairs
-fix the vector request for later calls, retaining only its effective endpoints;
-changing that request requires rebuilding. Input edits never update the snapshot.
-Returned arrays are independent; shared-context calls are serialized.
-See [the repeated-call example](community.md#distances-between-communities).
-
-`raoD` returns `RaoDResult` with `Dkk`, `Dkl`, `H`, `total`, `alpha`, `beta`,
-and `Fst`. It uses `patristic / 2` and requires an ultrametric tree (absolute
-root-to-tip tolerance 1e-8), with finite non-negative branch lengths and a
-finite sum. Abundance weighting defaults to true. Setting it false changes
-within-site compositions to incidence; pooling and site weights retain original
-abundances. Empty sites propagate NaN to alpha/beta/Fst while pooled total may
-remain valid. Dkk, Dkl and H own independent arrays in input site order.
-The default `pairwise=true` returns both site-pair matrices. With `pairwise=false`,
-`Dkl` and `H` are independent `0×0` matrices; `Dkk` and all four scalars retain
-the same definitions, weighting and NaN rules, and no site pairs are evaluated.
-Both modes automatically choose full or compressed tree traversal from observed
-tip coverage, after original-tree validation and abundance pooling.
-See [Rao partition rules and example](community.md#rao-diversity-partition).
-
-### Community Result Types
-
-- `pd` returns `PDResult` with `sample_labels`, `pd`, `richness`, and
-  `include_root`.
-- `weighted_endemism` returns `WeightedEndemismResult` with `sample_labels`,
-  `we`, `richness`, and `species_occupancy` in input column order.
-- `phylo_endemism` returns `PhyloEndemismResult` with `sample_labels`, `pe`,
-  `richness`, `branch_occupancy` in tree edge order, and `weighted`.
-- `relative_pd` returns `RelativePDResult` with `sample_labels`, `rpd`,
-  `pd_normalized`, `pd_equal_normalized`, `richness`, `total_branch_length`,
-  and `positive_branch_count`.
-- `phylobeta` returns `PhylobetaResult` with `sample_labels`, `total`,
-  `turnover`, `nestedness`, `index_family`, and `pairs`.
-- `beta_multi` returns `BetaMultiResult` with scalar `total`/`turnover`/`nestedness`,
-  `index_family`, selected `sample_labels`, original `sample_indices`, selected-site
-  `richness` and `pooled_richness`. See [multiple-site beta](community.md#multiple-site-taxonomic-beta).
-- `phylobeta_multi` returns `PhylobetaMultiResult` with the three scalar components,
-  `index_family`, selected `sample_labels`, original `sample_indices`, `richness`,
-  rooted `pd` and selected-union `pooled_pd`. It also accepts `CommunityContext`.
-  See [multiple-site phylogenetic beta](community.md#multiple-site-phylogenetic-beta).
-- `phylobeta_ses` returns `PhylobetaSESResult` with site labels and richness,
-  `observed`, `null_mean`, `null_sd`, `z_score`, `p_value`,
-  `valid_replicates`, `pairs`, the selected family/component, and null settings.
-- `nmds` returns `NMDSResult` with labels, `points`, Kruskal `stress`, packed
-  input/score/fitted distances, the best start's history and stopping reason,
-  and per-start stress, iteration and convergence diagnostics.
-- `align_nmds` returns `NMDSAlignmentResult` with source-order coordinates,
-  matched labels, the rotation/scale/centers, anchor residuals and RMSE.
-- `nmds_colors` returns `NMDSColorResult` with labels, two-axis `points`,
-  matching `rgb`/`hex`, a reusable `NMDSColorScale` and `clipped` flags.
-  See [alignment and colors](regionalization.md#coordinate-alignment-and-colors).
-- `fitgom` returns `GoMResult` with labeled `omega`/`theta`, hard membership,
-  the NEF objective, EM residual and per-start convergence diagnostics.
-  `indicators(fit)` ranks its species. See [mixed membership](regionalization.md#mixed-regional-membership).
-- `ses_pd`, `ses_mpd`, and `ses_mntd` return typed results containing observed
-  values, null means/SDs, z scores, rank p-values, run count, and null model.
-  Empty communities have `NaN` MPD/MNTD. Singleton observations are `NaN`,
-  except abundance-weighted MPD with positive mass, which is zero.
-- `psv` returns `PSVResult` with `psv`, `richness`, `variance`, and `scale_vcv`.
-  Variance describes uniform sampling without replacement at that richness
-  from all tree tips; full-pool variance is zero. This corrects the previous
-  leaf-order-dependent formula. Communities with fewer than two taxa have
-  `NaN` PSV and variance; `compute_var=false` leaves variance as `NaN`.
-  `psr`, `pse`, `psc`, and `psd` return named tuples whose field names are
-  the metric names documented by their function. See [PSV and PD moments](community.md#psv-psr-and-analytical-pd-moments).
-- `pse` uses relative abundances; equal positive abundances give PSV. `psc`
-  uses presence and excludes the same species identity, retaining zero
-  contrasts to different species. Both return their metric and `richness`,
-  with `NaN` for fewer than two species. Raw-covariance PSC can be negative.
-  `psd` returns `psv`, `var_psv`, `psc`, `psr`, `var_psr`, `pse` and `richness`
-  in site order, each with its own array and the individual metric's rules.
-- `expected_pd` and `pd_variance` return `ExpectedPDResult`; `richness` defaults
-  to `1:tree.ntips`. The keyword accepts an integer or integer vector/range
-  within that interval, preserving order and duplicates. All three result
-  arrays contain only requested points, even for scalar or empty requests.
-  Every tip independently occurs with probability
-  `richness/tree.ntips`, so richness is an expected count. `expected_pd` is
-  the mean PD; `variance_pd` is the exact Bernoulli variance when
-  `upper_bound=false`, or picante's covariance upper bound by default.
-- `pd_calc(tree, tips; variant=...)` returns one scalar for a tip subset.
-  Matrix input returns a named tuple with `pd`, `richness`, and normalized
-  `variant`. Accepted variants are `TBL`, `MST`, `UEH`, `SBL`, and `TIP`.
-- `pd_bootstrap(tree, ntips; ...)` returns a vector of replicate scalars.
-  `pd_bootstrap(community, tree; ...)` returns `PDBootstrapResult` with
-  `observed`, a sites-by-reps `replicates` matrix, and `richness`.
-  Weights follow tree-tip order; see [PD variants and bootstrap](community.md#pd-variants-and-bootstrap)
-  for zero weights, singleton/root behavior and seed compatibility.
+`tree_sampler` returns iterable `TreeSampleResult`: independent `trees` and
+draw-order `sample_indices`, `source_paths`, `source_indices`, `source_lines`,
+plus `population_size`, `replace`, `burnin`, `thin`. Sampling is uniform over
+all eligible records, with replacement by default. See [posterior input](trees.md#posterior-tree-streams-and-samples).
 
 ### Posterior distance means
 
 `mean_dist(data, trees; index_family=:sorensen, component=:total, pairs=nothing,
-nan_policy=:skip, block_size=256)` returns `MeanDistResult` directly over a
-tree iterator. Matrix input also accepts `tip_labels` and `sample_labels`;
-omitted tip labels fix column meanings to the first tree's order. `CommunityData`
-supplies labels and may omit unobserved tree species. The one-argument
-`mean_dist(inputs)` retains its distance/beta aggregation contract. See
+nan_policy=:skip, block_size=256)` consumes trees directly. Matrix columns
+without `tip_labels` take their meaning from the first tree. `CommunityData`
+supplies species labels. The one-argument form aggregates existing distances
+or beta results, aligning site labels.
+
+`MeanDistResult` contains `sample_labels`, `distances`, `counts`, `pairs`,
+`replicates`, `component`, `index_family`. `counts` is per pair and counts only
+finite observations; `replicates` counts all inputs. No valid value gives NaN.
+`nan_policy=:propagate` preserves NaN if any replicate is undefined. See
 [posterior means](regionalization.md#mean-distances-across-posterior-trees).
 
 ### Grouping and conservation results
 
 | Function | Result and ordering | Guide |
-|---|---|---|
+| --- | --- | --- |
 | `optimal_functional_groups` | `FunctionalGroupSelectionResult`: sorted candidate k, diagnostics, optional recommendation and reusable grouping | [Aggregation](aggregation.md) |
-| `indicators` | `IndicatorSpeciesResult`: regions × ranks, original species indices, missing padding | [Regionalization](regionalization.md) |
+| `nmds` | `NMDSResult`: site-order `points`, Kruskal `stress`, packed input/score/fitted distances, best-start and per-start diagnostics | [NMDS](regionalization.md#nonmetric-multidimensional-scaling) |
+| `align_nmds` | `NMDSAlignmentResult`: source-order coordinates, matched labels, rotation/scale/centers, anchor residuals and RMSE | [Alignment](regionalization.md#coordinate-alignment-and-colors) |
+| `nmds_colors` | `NMDSColorResult`: labels, two-axis `points`, `rgb`/`hex`, reusable `NMDSColorScale`, `clipped` | [Colors](regionalization.md#coordinate-alignment-and-colors) |
+| `fitgom` | `GoMResult`: labeled sites × k `omega`, species × k `theta`, hard memberships, objective and convergence diagnostics | [Mixed membership](regionalization.md#mixed-regional-membership) |
+| `indicators` | `IndicatorSpeciesResult`: regions × ranks, original species indices, missing padding | [Indicators](regionalization.md#regional-indicator-species) |
 | `phylobuilder` | `PhyloBuilderResult`: independent tree; status and original anchor IDs in requested-species order | [Trees](trees.md) |
 | `edge` | `EDGEResult`: full-tree tip order, ED/GE/EDGE and missing-category status | [Conservation](conservation.md) |
 | `hotspots`, `coldspots` | `MetricSelectionResult`: input-order flags and labels, quantile threshold and valid counts | [Conservation](conservation.md) |
 | `classify_values` | `ValueClassificationResult`: input-order classes, upper bounds and optional Jenks SSE | [Conservation](conservation.md) |
 
-These operations preserve their inputs. Vector metric summaries accept finite
-negative values; `invalid=:skip` preserves missing/NaN positions with missing
-flags/classes. This policy is separate from nonnegative community inputs.
+GoM weights describe composition, not uncertainty. Convergence of GoM or NMDS
+does not establish a global optimum. Metric-value summaries allow finite
+negative numbers; `invalid=:skip` keeps missing/NaN positions as missing
+flags/classes. Community abundances still must be nonnegative.
 
 ### Trait Result Types
 
-`pagel_lambda` returns `PagelLambdaResult` with the fitted lambda, profile
-interval, likelihood-ratio test, fit diagnostics, and model summary fields
-described in the [phylogenetic signal guide](signals.md). The DataFrame
-overload performs taxon-label alignment before fitting.
+| Function | Result and main fields |
+| --- | --- |
+| `pagel_lambda` | `PagelLambdaResult`: fitted lambda, profile interval, likelihood-ratio test, fit diagnostics and model summary; DataFrame input aligns taxon labels |
+| `phylogenetic_signal_k` | `PhyloSignalResult`: `k`, observed/null PIC variance, null SD, rank p-value, z score, aligned traits/tip labels, valid count and status |
+| `phylogenetic_contrasts` | `PICResult`: contrasts, internal-node IDs, expected distances, local ancestral values, tip labels, `scaled`/`weighted` |
 
-`phylogenetic_signal_k` returns `PhyloSignalResult` with `k`, observed and
-null PIC variance, null SD, rank p-value, z score, reordered trait values, tip
-labels, valid replicate count, and status. Its null model is tip shuffling;
-pass an explicit `rng` for reproducibility. The default is
-`StableRNG(20260713)`.
-
-`phylogenetic_contrasts` returns `PICResult` with `contrasts`, internal-node
-IDs, expected contrast distances, local ancestral values, tip labels, and the
-`scaled`/`weighted` flags. PIC requires a strictly bifurcating tree with finite
-strictly positive branch lengths. Use `multi2di` explicitly for multifurcating
-trees. PIC is not a general ancestral-state reconstruction API.
+K shuffles tip traits; its default RNG is `StableRNG(20260713)`. PIC requires
+a strictly bifurcating tree with finite positive branches; use `multi2di`
+explicitly for multifurcations. PIC is not a general ancestral-state
+reconstruction API. See [trait models and diagnostics](signals.md).
 
 ### Boundary Policies
 
-- `pd` assigns zero PD to an empty community and the root-to-tip path length to
-  a singleton when `include_root=true`.
-- Empty or undefined community metrics return `NaN` rather than silently
-  dropping rows; UniFrac and PhyloSor use the explicit diagonal rules above.
-- Negative, infinite, or NaN community values raise `ArgumentError`.
-- K/PIC reject missing and non-finite trait values.
-- RaoD rejects non-ultrametric trees. PIC rejects multifurcations and zero or
-  non-finite branch lengths.
-- Randomized methods accept an injected `AbstractRNG`; seed-based `nri_nti`
-  remains deterministic for the same seed.
+| Case | Behavior |
+| --- | --- |
+| Empty site / singleton PD | `pd`: zero for empty sites; root-to-tip length for singletons with `include_root=true`, NaN with false. `pd_calc` variants have their own branch rules; singleton MST is zero. |
+| Empty MPD/MNTD | NaN; singletons also NaN except abundance-weighted MPD with positive mass, which is zero |
+| Fewer than two species | PSV/PSR/PSE/PSC and PSV/PSR variances are NaN |
+| Empty/zero-PD beta | `beta_diss` uses richness, `phylobeta` uses PD. Both zero: all components NaN. Only one zero: total one, turnover/nestedness NaN. |
+| Zero UniFrac/PhyloSor denominator | Both return zero, including nonempty sites whose PD is zero |
+| Invalid community values | Negative, infinite or NaN values raise `ArgumentError`; rows are never silently dropped |
+| Tree restrictions | RaoD requires ultrametricity (absolute root-to-tip tolerance `1e-8`); scaled PSV-family metrics require positive root-to-tip lengths |
+| Missing/nonfinite traits | K/PIC reject them |
+| Randomized methods | Pass an explicit `AbstractRNG` for reproducibility. `nri_nti` also accepts stable seeds; defaults differ across functions. |
+
+SES zero-SD behavior and lower-tail p-value denominators are specified in
+[null models](null_models.md). Clustering/NMDS require complete, finite,
+nonnegative symmetric distances with zero diagonal; see [regionalization](regionalization.md).
+PhyloSor is a similarity, comdist diagonals are generally nonzero, and SES
+z scores are not dissimilarity inputs.

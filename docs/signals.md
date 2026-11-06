@@ -1,8 +1,11 @@
 # Phylogenetic signals
 
-[Home](../README.md) · [简体中文](signals_zh.md)
+[Documentation](README.md) · [Home](../README.md) · [简体中文](signals_zh.md)
 
-Pagel's lambda, K, independent contrasts and binary-trait D.
+On this page: [Lambda](#pagels-lambda) · [K and PIC](#phylogenetic-k-phylok) · [Binary-trait D](#phylogenetic-d)
+
+Pagel's lambda, K, independent contrasts and binary-trait D. For species
+assemblages rather than traits, see [NRI/NTI and community SES](null_models.md).
 
 The examples on this page share this four-tip tree.
 

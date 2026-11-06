@@ -1,6 +1,8 @@
 # Regionalization and ordination
 
-[Home](../README.md) · [简体中文](regionalization_zh.md)
+[Documentation](README.md) · [Home](../README.md) · [简体中文](regionalization_zh.md)
+
+On this page: [Clustering](#regionalization-from-beta-diversity) · [Evaluate cuts](#reuse-a-hierarchy-and-evaluate-cuts) · [GoM](#mixed-regional-membership) · [Indicators](#regional-indicator-species) · [Posterior means](#mean-distances-across-posterior-trees) · [NMDS](#nonmetric-multidimensional-scaling) · [Alignment and colors](#coordinate-alignment-and-colors)
 
 Cluster beta distances, fit mixed memberships, evaluate partitions, average posterior distances, run NMDS and rank regional indicator species.
 
@@ -65,15 +67,13 @@ distances. Centroid/median do not automatically square the input; their heights
 can decrease and remain in chronological merge order. A linkage update outside
 finite Float64 range is an error; rescale input distances in that case.
 
-The six monotone methods use O(n²) nearest-neighbor chaining. Centroid/median
-use global minima with cached row minima, with O(n³) worst-case time. Both use
-a packed Float64 work triangle of `n*(n-1)/2` entries. The full input and
-regional output still require quadratic memory. Ties are deterministic for
-fixed row order: chains start at the earliest active cluster, retain the
+Ties are deterministic for fixed row order: chains start at the earliest
+active cluster, retain the
 predecessor on equal nearest distances, otherwise choose the earliest active
 cluster; equal-height discoveries keep their order. Centroid/median choose the
 lexicographically first active pair. Ties can differ from R `hclust` and depend
-on row order. Inputs are not mutated; outputs own their arrays.
+on row order. Inputs are not mutated; outputs own their arrays. See
+[clustering costs](performance.md#regionalization-and-ordination).
 
 ### Reuse a hierarchy and evaluate cuts
 
@@ -96,9 +96,8 @@ evaluation.reason
 
 `PhyloregionContext` owns an original packed distance snapshot and full tree;
 input changes do not affect it. Treat context arrays as read-only. Preparation
-retains one packed triangle and uses a second as temporary clustering
-workspace. Repeated `cutree` calls only cut the tree; `phyloregion(ctx; k)` also
-visits site pairs for regional means and allocates the k×k regional matrix.
+is worthwhile when making several cuts. Repeated `cutree` calls return only
+memberships; `phyloregion(ctx; k)` also calculates regional summaries.
 
 `select_linkage` also accepts a distance matrix or full beta result. Restrict
 methods with, for example, `methods=(:average, :complete, :single)`. It compares
@@ -125,7 +124,7 @@ increment. This is a heuristic, not a curvature optimization. Unmet thresholds
 or zero dispersion return `optimal_k=nothing` and the full table, with
 `:thresholds_not_met` or `:zero_dispersion` as the reason. Sums use original
 squared-distance units and can overflow/underflow, while EV and decisions use
-normalized distances. Scores visit all pairs once with O(n) extra storage.
+normalized distances.
 
 For ordination coordinates, see [NMDS](#nonmetric-multidimensional-scaling).
 
@@ -169,9 +168,8 @@ optimizer can follow a different path.
 Sites/species keep input order. Regions are sorted by decreasing total
 `omega`, with stable exact ties; hard `cluster_sizes` can contain zeroes.
 Empty sites are errors. All-zero species columns stay in the model, affecting
-the prior and retaining a positive prior contribution in `theta`. CSC input
-uses O(nnz + (sites+species)*k) work storage without a dense community or an
-nnz × k responsibility array. Inputs are not mutated. Use aggregated
+the prior and retaining a positive prior contribution in `theta`. Inputs are
+not mutated. See [GoM storage](performance.md#regionalization-and-ordination). Use aggregated
 `.community` for lineage or functional fits. `1 <= k <= min(sites,species)`;
 automatic k selection, Bayes factors and uncertainty estimates remain in the
 long-term plan.
@@ -261,11 +259,9 @@ may omit unobserved tree species. Matrix columns must cover every tree's complet
 tip set. Supply `tip_labels` to fix column meanings; if omitted, the first
 tree's tip order defines the columns for all later trees. All supplied species,
 including zero columns, must exist in every tree. All community values are
-validated, including unrequested sites. Full output uses a reusable shared-branch
-column block controlled by `block_size=256`. It still requires quadratic mean
-state and final output. Both mean entry points retain two full result matrices
-and pack scale/correction work arrays into triangles, with no replacement
-matrices at finalization; see [performance](performance.md#mean-accumulator-storage).
+validated, including unrequested sites. `block_size=256` controls temporary
+column blocks; full output remains quadratic in site count. See
+[mean storage](performance.md#mean-accumulator-storage).
 
 For `mean_dist(inputs)`, output order defaults to the first input's labels. Supply `sample_labels` to
 set a complete domain explicitly; later labeled inputs may be reordered or
@@ -293,8 +289,6 @@ and a scaled compensated sum handles very large and very small distances.
 Regionalization accepts only complete, finite mean matrices with zero diagonals;
 select a defined subset explicitly before clustering. This summarizes distances
 across trees and does not estimate posterior support for the resulting regions.
-Local R validation covers 42 ensembles, including 18 posterior beta ensembles;
-ordinary tests retain four small examples in one reference TSV and do not use R.
 
 ## Nonmetric multidimensional scaling
 
@@ -351,10 +345,10 @@ are not ecological identifiers. Input dissimilarity units do not set score
 units. `dissimilarities`, `distances` and `disparities` contain original,
 Euclidean score and monotone fitted distances in upper-triangle column order:
 `(1,2), (1,3), (2,3), (1,4), ...`. These aligned vectors support Shepard plots.
-No pair-by-iteration history is retained. Pair storage is quadratic; PCoA
-initialization adds cubic work, which `init=:random` avoids. Community
-transformations, species scores, step-across and half-change scaling are
-outside this numeric interface.
+Storage and initialization costs are described in
+[performance](performance.md#regionalization-and-ordination). Community
+transformations, species scores, step-across and half-change scaling are outside
+this numeric interface.
 
 ## Coordinate alignment and colors
 

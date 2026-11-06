@@ -1,6 +1,8 @@
 # Conservation metrics
 
-[Home](../README.md) · [简体中文](conservation_zh.md)
+[Documentation](README.md) · [Home](../README.md) · [简体中文](conservation_zh.md)
+
+On this page: [EDGE](#edge) · [EDGE2](#edge2) · [Hotspots/coldspots](#hotspots-and-coldspots) · [Value classes](#metric-value-classes)
 
 EDGE/EDGE2 scores, extinction probabilities, metric tail selection and value classification.
 
@@ -129,12 +131,11 @@ bounds; equal/quantile intervals can be empty. A count below k gives
 `:reduced_classes`; constants give one class. Empty/all-invalid inputs fail.
 `invalid=:skip` leaves missing classes at missing/NaN positions; Inf fails.
 
-Jenks minimizes total within-class SSE with multiplicity-weighted dynamic
-programming over m distinct sorted values: O(k m²) time and O(k m) workspace.
+Jenks minimizes total within-class SSE, accounting for repeated-value counts.
 `max_work=50_000_000` bounds the exact workload; excess work fails explicitly.
-Centering/scaling and Welford interval variance avoid raw squared-sum
-cancellation. Original-unit SSE may overflow/underflow; `normalized_objective`
+Original-unit SSE may overflow/underflow; `normalized_objective`
 and `objective_scale` retain the scaled result. Equal-cost splits prefer the
 latest final split recursively, which may differ from R while giving the same
 minimum SSE. Values retain zeros, negatives and fractions. These are numeric
-classes; map geometry, colors and plotting are separate operations.
+classes; map geometry, colors and plotting are separate operations. See
+[exact-classification costs](performance.md#metric-value-classification).

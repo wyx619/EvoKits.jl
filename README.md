@@ -45,14 +45,16 @@ tips by label.
 
 ## Guides
 
+Browse the [documentation index](docs/README.md) for inputs, distances, null models and task-based reading paths.
+
 | Topic | Contents |
 | --- | --- |
 | [Trees](docs/trees.md) | Newick I/O, topology, pruning, taxonomy-aided completion, R/ape mapping and time slices |
-| [Community diversity and structure](docs/community.md) | Sparse inputs, PD, WE/PE, relative PD, beta decomposition, SES, NRI/NTI and reusable contexts |
+| [Community diversity and structure](docs/community.md) | PD, WE/PE, relative PD, diversity moments, Rao partition and beta decomposition |
 | [Traits and aggregation](docs/aggregation.md) | Trait summaries, k-prototypes, group-count selection, functional beta and lineage aggregation |
 | [Regionalization and ordination](docs/regionalization.md) | Eight linkage methods, mixed memberships, posterior means, NMDS alignment/colors and KL indicators |
 | [Phylogenetic signals](docs/signals.md) | Pagel's lambda, K, independent contrasts and D |
 | [Conservation metrics](docs/conservation.md) | EDGE/EDGE2, extinction probabilities, hotspots/coldspots and Jenks classes |
-| [API conventions](docs/api.md) | Combined example, ordering, result types and boundary behavior |
-| [Performance](docs/performance.md) | Runtime backend and benchmark timings |
+| [API conventions](docs/api.md) | Ordering, result shapes/fields and boundary behavior |
+| [Performance](docs/performance.md) | Computation routes, complexity, memory and benchmark conditions |
 | [Source layout](docs/development.md) | Internal directories and dependency order |

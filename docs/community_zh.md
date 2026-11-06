@@ -1,110 +1,43 @@
 # 群落多样性与结构
 
-[首页](../README_zh.md) · [English](community.md)
+[文档目录](README_zh.md) · [首页](../README_zh.md) · [English](community.md)
 
-带标签的稠密与稀疏输入、PD、特有性、beta 分解、NRI/NTI、可复用上下文及零模型。
+本页：[PD 与 bootstrap](#pd-变体与-bootstrap) · [多样性矩](#psvpsr-与解析-pd-矩) · [Rao](#rao-多样性分解) · [特有性与两两 beta](#特有性相对-pd-与-beta-分解) · [多群落分类 beta](#多群落分类-beta) · [多群落系统发育 beta](#多群落系统发育-beta)
 
-本页示例共用以下小树：
+按分析问题选择多样性或 beta 指标，计算并解释结果。本页示例共用以下树和带标签群落：
 
 ```julia
-using EvoKits
+using EvoKits, SparseArrays
 
 tree = mktempdir() do dir
     path = joinpath(dir, "example.nwk")
     write_tree(path, "((A:1,B:1):1,(C:1,D:1):1);")
     read_tree(path)
 end
+community = [1 0 1 0; 0 1 1 0]
+data = CommunityData(sparse(community);
+    sample_labels = ["west", "east"], species_labels = tree.tip_labels)
 ```
 
 ## 群落指标
 
-`CommunityData` 将群落数值、群落标签和物种标签一起保存，接受矩阵、长表 `DataFrame` 或行列索引三元组。矩阵输入会被复制，默认保留数值类型和稠密/CSC 存储；设置 `storage=:sparse` 可转为稀疏存储。长表和三元组直接构建稀疏矩阵，无需先展开成稠密宽表。
-
-```julia
-using DataFrames
-
-records = DataFrame(
-    sample = ["s1", "s1", "s2", "empty"],
-    species = ["A", "C", "A", "A"],
-    value = [2, 1, 3, 0],
-)
-data = CommunityData(records; sample=:sample, species=:species, value=:value)
-data.matrix
-data.sample_labels   # ["s1", "s2", "empty"]
-data.species_labels  # ["A", "C"]
-
-weighted_endemism(data).we
-beta_diss(data; pairs=[(1, 2)])
-phylo_endemism(data, tree).pe
-
-# 先对齐完整树；需要复用分支集合和占据统计时再准备上下文。
-aligned = align_community(data, tree)
-ctx = prepare_community(aligned, tree)
-pd(ctx).pd
-```
-
-长表默认按标签首次出现的顺序排列。可显式提供完整的 `sample_labels`、`species_labels` 控制输出顺序，并保留空群落和未出现物种；列表须包含表中的全部标签。标签接受非空字符串或整数，整数转为字符串，且不能重复。矩阵未提供标签时生成 `sample_1`、`species_1` 等名称，树相关分析需要提供实际物种名。数值必须为有限非负实数，缺失值会报错；设置 `value=nothing` 时按记录次数计数。
-
-重复的群落—物种记录默认求和；设置 `duplicates=:error` 时拒绝重复，包括零值重复记录。求和溢出会报错。输入保留丰度，存在型指标才按正值解释。索引三元组的行列号从一开始，对应显式标签列表：
-
-```julia
-data = CommunityData([1, 1, 2], [1, 2, 1], [2, 1, 3];
-    sample_labels=["s1", "s2"], species_labels=["A", "C"])
-```
+| 分析问题 | 函数 | 说明 |
+| --- | --- | --- |
+| 群落包含多少分支历史？ | `pd`、`pd_calc`、`pd_bootstrap` | [PD 变体](#pd-变体与-bootstrap) |
+| 物种有多大变异、均匀性或聚集程度？ | `psv`、`psr`、`pse`、`psc`、`psd` | [多样性矩](#psvpsr-与解析-pd-矩) |
+| 独立出现模型下，PD 的期望值和方差是多少？ | `expected_pd`、`pd_variance` | [解析 PD 矩](#psvpsr-与解析-pd-矩) |
+| 如何分解 Rao 多样性？ | `raoD` | [Rao 分解](#rao-多样性分解) |
+| 哪些群落包含分布局限的物种或分支？ | `weighted_endemism`、`phylo_endemism`、`relative_pd` | [特有性与两两 beta](#特有性相对-pd-与-beta-分解) |
+| 两个群落有何差异？ | `beta_diss`、`phylobeta` | [两两 beta](#特有性相对-pd-与-beta-分解) |
+| 整个群落集合的多样性有多大？ | `beta_multi`、`phylobeta_multi` | [多群落 beta](#多群落分类-beta) |
 
 ### 导出长表与重建群落
 
-`community_longtable(data)` 返回命名元组，包含记录表 `table`（`DataFrame`）和完整的 `sample_labels`、`species_labels` 向量。每个正值群落—物种组合对应一行，列名固定为 `sample`、`species`、`value`；先按物种列序，再按群落行序排列。丰度与小数权重保留原值和数值类型，整数丰度保存在数值列中，零值不导出。
-
-```julia
-using SparseArrays
-
-export_source = CommunityData(sparse([0.0 2.5 0; 0 0 0; 3 0.25 0]);
-    sample_labels=["s2", "empty", "s1"], species_labels=["C", "A", "absent"])
-records = community_longtable(export_source)
-records.table
-restored = CommunityData(records.table;
-    sample_labels=records.sample_labels, species_labels=records.species_labels)
-restored.matrix == export_source.matrix # true
-restored.sample_labels                 # ["s2", "empty", "s1"]
-restored.species_labels                # ["C", "A", "absent"]
-```
-
-保存记录表时须同时保存两份标签列表：只有非零记录无法保留空群落、全零物种列，也可能改变群落顺序。全零矩阵、没有行或列的矩阵同样适用。输出数组与输入独立；重建采用 CSC 存储，沿用长表的数值规则，包括将 Bool 转为整数计数。CSC 导出直接遍历存储项，[存储开销](performance_zh.md#群落长表导出)单独说明。
+构造方法、稀疏存储和完整长表往返示例见[群落输入](community_input_zh.md#导出长表与重建群落)。
 
 ### 树对齐与指标调用
 
-树相关调用自动按物种名对齐，为输入中没有的树物种补零列，保留完整树及根。输入中任何树外物种都会报错。`align_community(data, tree; missing_tips=:error)` 还会拒绝缺失的树物种。对齐保留稠密/CSC 存储；先显式对齐一次，后续调用可复用已对齐矩阵，预处理上下文进一步复用分支与占据统计。`CommunityData` 内部数组应视为只读；构造、显式对齐、指标结果和上下文各自拥有独立数组。
-
-现有接受群落矩阵的指标及 `prepare_community` 均支持 `CommunityData`。结果保留原行顺序，已有带标签的结果类型自动使用其群落标签。标签在构造时设置，指标调用中不再另传 `tip_labels` 或 `sample_labels`。SES 的观测与随机化使用稀疏物种集合，也支持丰度加权 MPD/MNTD；其它部分旧指标仍有稠密内部工作区。原有矩阵调用继续可用：
-
-```julia
-community = [
-    1 0 1 0
-    0 1 1 0
-]
-
-pd_result = pd(community, tree; tip_labels = tree.tip_labels)
-ses_result = ses_mpd(community, tree; runs = 999)
-```
-
-群落工具包括系统发育多样性 `pd`、进化独特性 `evol_distinct`，以及 PD、MPD 和 MNTD 的标准化效应量指标 `ses_pd`、`ses_mpd` 和 `ses_mntd`。
-
-群落 beta 多样性及其他多样性指标使用相同的行列约定：
-
-```julia
-comdist(community, tree)
-comdistnt(community, tree)
-unifrac(community, tree)
-phylosor(community, tree)
-raoD(community, tree)
-
-psv_result = psv(community, tree)
-psv_result.psv
-expected_pd(tree).expected_pd
-```
-
-矩阵的行表示群落，列表示树的 tip。如果输入列的顺序与树 tip 顺序不同，请提供 `tip_labels`。当距离或多样性未定义时，空群落返回 `NaN`；PD、UniFrac、PhyloSor 和 RaoD 接受单物种群落。
+缺失物种、标签顺序及准备函数选择见[对齐与上下文](community_input_zh.md#树对齐与指标调用)。
 
 ### PD 变体与 bootstrap
 
@@ -131,15 +64,15 @@ fixed_richness = pd_bootstrap(tree, 2; reps = 99, method = :MST,
     tip_weights = [1.0, 2.0, 3.0, 4.0], rng = MersenneTwister(42))
 ```
 
-bootstrap 使用指数随机键从完整树 tip 池加权无放回抽样，保留各群落丰富度。权重按树 tip 顺序，转换后须为有限非负 Float64 且至少一项为正，省略时均匀抽样。树输入返回向量；群落输入返回 `PDBootstrapResult`，空群落为零，`include_root=false` 时单物种群落为 NaN，与 `pd` 一致。
+bootstrap 从完整树 tip 池加权无放回抽样，保留各群落丰富度。权重按树 tip 顺序，转换后须为有限非负 Float64 且至少一项为正，省略时均匀抽样。树输入返回向量；群落输入返回 `PDBootstrapResult`，空群落为零，`include_root=false` 时单物种群落为 NaN，与 `pd` 一致。
 
-权重总和有限时，选中子集及 RNG 消耗保持原完整排序实现的结果；并列按原 tip 位置，零权重随机键为 `-Inf`。若丰富度超过正权重支持数，保留旧实现按索引填入剩余 `-Inf` 项的规则，与 R 拒绝支持数不足的行为不同。各权重有限但求和溢出时，先缩放再归一化。R 与 Julia 对齐抽样分布，不要求跨语言随机流相同。稀疏工作区和有限候选堆替代稠密随机群落及完整排序，耗时和剩余成本见[性能说明](performance_zh.md#pd-变体与-bootstrap)。
+若请求丰富度超过正权重 tip 数，剩余位置按原 tip 顺序从零权重物种中填入，与 R 拒绝支持数不足的行为不同。各权重有限但求和溢出时，先缩放再归一化。正权重支持数充足时，R 与 Julia 对齐加权抽样分布，不要求跨语言随机流相同。耗时与存储见[性能说明](performance_zh.md#pd-变体与-bootstrap)。
 
 ### PSV、PSR 与解析 PD 矩
 
 `psv` 是物种对差异 `(Cii+Cjj)/2-Cij` 的均值。C 默认为 Brownian 相关矩阵；`scale_vcv=false` 使用协方差，此时该差异等于 `patristic / 2`。`psr` 为 PSV 乘群落丰富度。两者直接使用树上统计量，方差也无需 VCV，接受稠密/CSC 输入和 `CommunityData`。
 
-PSV 方差现按完整树物种池在指定丰富度下**均匀无放回**抽样定义，物种池包含未观测 tip；抽取完整物种池时方差为零。修复了与原 picante 相同的叶序依赖公式，原始协方差模式也计入不同 tip 方差的贡献。空群落和单物种群落返回 `NaN`，`compute_var=false` 时方差为 `NaN`；相关矩阵模式要求根到每个 tip 的长度为正。
+PSV 方差按完整树物种池在指定丰富度下**均匀无放回**抽样定义，物种池包含未观测 tip；抽取完整物种池时方差为零。与参考 picante 实现中的叶序依赖公式不同，这里的方差不随 tip 排序改变，原始协方差模式也计入不同 tip 方差的贡献。空群落和单物种群落返回 `NaN`，`compute_var=false` 时方差为 `NaN`；相关矩阵模式要求根到每个 tip 的长度为正。
 
 ```julia
 moment_data = CommunityData(sparse([1 1 0 0; 1 1 1 1]);
@@ -162,7 +95,7 @@ pse(sparse([2.0 1 0 0]), tree).pse  # [4/9]
 
 `pse` 按相对丰度加权物种对差异；`psc` 为各存在物种到其它物种的最小 `1-Cij` 的均值。原始协方差模式下 PSC 是一减最大共有枝长的均值，可为负，且依赖枝长单位；相关矩阵模式在非超度量树上选中的邻居可能与 patristic 最近物种不同。不同物种间的零长度路径保留。`psd` 一次返回四项指标、PSV/PSR 方差和丰富度，沿用单项调用的定义及 NaN 规则，接受并保留稠密/CSC 与 `CommunityData` 输入；算法及分配开销见[独立性能说明](performance_zh.md#解析多样性矩)。
 
-稀疏数据的 PSV/PSR、PSE/PSC 使用观测物种连接树，保留原根对相关性和原始协方差的贡献。独立 PSV 只计算变异性，PSR 由同一路径得到；PSD 为每个群落只建一次连接树，供 PSV/PSE/PSC 共用。PSV/PSR（含 PSD 返回的对应项）的方差仍基于完整原树物种池，包括未观测物种及仅在单物种群落出现的物种。稠密场景保留顺序遍历，复杂度及实测见 [PSV/PSR 性能](performance_zh.md#psvpsr-连接树)和 [PSD 共用计算](performance_zh.md#psepsc-与-psd-共用计算)。
+PSV/PSR（含 PSD 对应输出）的方差始终基于完整原树物种池，包括未观测物种；算法与存储见[性能说明](performance_zh.md#解析多样性矩)。
 
 `expected_pd` 及别名 `pd_variance` 保留另一种模型：每个 tip 以 `richness/tree.ntips` 的概率**独立出现**，richness 是期望物种数。`upper_bound=false` 给出精确 Bernoulli 方差，默认 true 给出 picante 的协方差上界；并非固定样本量稀释曲线。
 
@@ -187,108 +120,9 @@ size(rao_summary.Dkl), size(rao_summary.H) # ((0, 0), (0, 0))
 
 默认 `pairwise=true` 返回两份群落对矩阵。只需要群落内多样性和合并分解时，设置 `pairwise=false` 跳过群落对计算，仍返回 `RaoDResult`，其中 `Dkl`、`H` 为各自独立的 `0×0` 矩阵，`Dkk`、`total`、`alpha`、`beta`、`Fst` 沿用原定义。
 
-两种模式都会在各群落合计观测物种较少时自动使用更小的连接树。先在原树上校验并按原丰度合并，再通过累加原始枝长压缩路径；覆盖树中大部分物种时保留整树路径，无需增加参数。
-
 默认按丰度加权。`abundance_weighted=false` 只将各群落内部的存在物种改为等权；合并群落的组成和群落间权重仍使用原丰度，因此 beta/Fst 可能为负。这是现有 Julia 选项，Picante 没有对应参数。
 
 空群落的 Dkk 及 Dkl/H 整行整列为 `NaN`；即使群落权重为零，也使 alpha/beta/Fst 为 `NaN`，但 total 仍可有效。全空输入的 total 为 `NaN`；零输入行返回空数组和 alpha=0。总多样性为零时 Fst 未定义，beta 也为零时返回 `NaN`。稠密/CSC 矩阵和 `CommunityData` 均遵循这些规则，输入不被修改；[算法与存储开销](performance_zh.md#rao-多样性分解)单独说明。
-
-### 群落间系统发育距离
-
-`comdist` 对两个群落间的全部物种对距离求均值；对角线包含同种的零距离及不同物种间距离。默认每个存在物种等权，`abundance_weighted=true` 使用丰度权重。空群落对应的整行、整列均为 `NaN`。
-
-`comdistnt` 先分别求两个方向的最近目标物种距离均值。默认两个方向等权；`abundance_weighted=true` 时，方向内部按来源物种丰度加权，再按两个群落的原总丰度合并方向均值。没有合格目标的来源物种被跳过，其余权重重新归一化；仅一个方向有效时使用该方向，都无效时返回 `NaN`。默认非空群落的对角线为零。
-
-```julia
-distance_data = CommunityData(sparse([2.0 1 0; 0 1 3; 0 0 0]);
-    sample_labels=["west", "east", "empty"], species_labels=["A", "B", "C"])
-cross_mean = comdist(distance_data, tree; abundance_weighted=true)
-nearest = comdistnt(distance_data, tree; exclude_conspecifics=true)
-cross_mean[3, :] # [NaN, NaN, NaN]
-nearest[1, 1]   # 2.0：第一个群落内部到不同物种的最近距离
-requested_pairs = [(1, 2), (2, 1), (1, 1), (3, 2)]
-selected_mean = comdist(distance_data, tree;
-    abundance_weighted=true, pairs=requested_pairs)
-# [10/3, 10/3, 8/9, NaN]
-selected_nearest = comdistnt(distance_data, tree;
-    abundance_weighted=true, exclude_conspecifics=true, pairs=requested_pairs)
-# [22/7, 22/7, 2, NaN]
-```
-
-`comdist` 和 `comdistnt` 均支持 `pairs`，按请求顺序返回距离向量，保留重复、反向和自身对；索引始终对应完整输入的群落行序，空请求返回空向量。即使某群落不在请求中，也会校验全部数值、标签和树枝长。计算仅保留请求端点，重复/反向请求复用一次求值；`comdistnt` 为每个唯一对计算双向均值，同一目标的遍历可复用。使用 `mean_dist` 汇总非对角群落对时，传入包含 `distances`、`sample_labels` 和 `pairs` 的命名元组，并显式指定输出 `pairs`；`mean_dist` 要求自身距离为零或 NaN，而 `comdist` 的自身对包含群落内多样性。`comdistnt` 默认自身对为零，开启 `exclude_conspecifics=true` 后可能非零。
-
-`exclude_conspecifics=true` 按物种身份排除同种；零长枝上的不同物种仍可具有零距离，此时单物种群落的对角线为 `NaN`。这些规则沿用现有 Julia 行为。Picante 在丰富度或总丰度不同的情况下采用不同的方向合并方式，排除同种时会排除全部零距离，并返回对角线为零的 `dist` 对象。
-
-两者接受稠密/CSC 矩阵或 `CommunityData`，保持群落顺序，要求枝长有限、非负且总和有限。输入不会修改；矩阵可通过 `tip_labels` 描述列序，`CommunityData` 则按其标签对齐。CSC 路径无需稠密群落或完整物种距离矩阵；默认返回完整群落矩阵，指定群落对时仅返回请求值。[算法与存储开销](performance_zh.md#群落间系统发育距离)单独说明。
-
-重复计算两种距离时，可以准备共用快照：
-
-```julia
-distance_context = prepare_community_distances(distance_data, tree)
-reused_mean = comdist(distance_context; abundance_weighted=true,
-    pairs=requested_pairs)
-reused_nearest = comdistnt(distance_context; abundance_weighted=true,
-    exclude_conspecifics=true, pairs=requested_pairs)
-
-fixed_context = prepare_community_distances(distance_data, tree;
-    pairs=requested_pairs)
-fixed_nearest = comdistnt(fixed_context; abundance_weighted=true,
-    exclude_conspecifics=true) # 请求顺序与 selected_nearest 相同
-```
-
-`CommunityDistanceContext` 保留丰度和存在两套权重、一份独立树拓扑及两种距离的工作区。准备时不传 `pairs`，后续可计算完整矩阵或更换群落对，共用覆盖全部已准备群落的拓扑。准备时固定 `pairs`，则只保留有效非空端点，并缓存请求调度；后续默认返回该请求顺序的向量，更换范围或顺序需要重新准备。
-
-准备时校验全部输入数值、物种标签、枝长及群落标签，群落标签须唯一且非空。不保留原矩阵或树，之后修改输入不会改变快照；分析变化后的数据需重新准备。上下文字段属于内部实现，不应修改；返回数组各自独立，同一上下文的调用通过锁依次使用工作区，不缓存距离矩阵。用于 PD/PE/beta 的存在型 `CommunityContext` 保留另一组汇总，继续使用原入口。
-
-非丰度加权的 MPD/MNTD 使用虚拟树计算，无需为每个群落扫描大树的所有边。零模型均值和标准差使用 Welford 在线算法累计。
-
-`ses_pd`、`ses_mpd` 和 `ses_mntd` 只保留一份随机化结果及可复用的物种/树工作区，不再构建稠密“群落 × 物种”随机化缓冲区。支持 `:taxa_labels`、`:richness`、`:frequency`、`:sample_pool`、`:phylogeny_pool`、`:trialswap` 和 `:independentswap`。存储重构保留原抽样规则及基于排列的随机数消耗：richness 保留行和，frequency 保留列和，交换模型同时保留两者。现有 `:sample_pool` 与 `:richness` 一样使用完整树物种池，`:phylogeny_pool` 还会置换物种标签。丰度加权 MPD/MNTD 仍随机化存在状态，并将原丰度固定在树 tip 位置；零权重的随机物种仍作为 MNTD 最近邻候选。
-
-三种 SES 均按有限的随机值计算均值和样本标准差：没有有效随机值时，均值、标准差和 z 均为 `NaN`；只有一个有效随机值时，标准差及 z 为 `NaN`；零模型标准差为零时，z 为 `NaN`。秩 p 值保留原约定 `(1 + 小于观测值的次数 + 0.5 × 相等次数) / (runs + 1)`，非有限随机值不增加秩计数。PD 已修复重复抽样间分支访问标记复用导致的漏计；不包含根时直接累加 MRCA 以下分支，避免用相减去除很长的共有根路径。
-
-SES 虚拟边在深度相减可能丢失精度时，也会回退到原始分支累加，以保留长共享路径下的极短距离。
-
-如需 Caper 兼容的多分叉 ED 处理方式，可使用 `evol_distinct(tree; type = :fair_proportion, polytomy_correction = :isaac)`；其他支持的模式为 `:mooers` 和 `:none`。
-
-## NRI 和 NTI
-
-NRI 和 NTI 描述相对于零模型的群落系统发育结构，分别是 MPD 和 MNTD 标准化效应量的相反数：`NRI = (零模型 MPD 均值 - 观测 MPD) / 零模型 MPD 标准差`，NTI 对应使用 MNTD。正值表示相对于所选零模型的系统发育聚集，负值表示离散。
-
-对于单个观测群落及其本地物种池，使用 `nri_nti`：
-
-```julia
-pool = ["A", "B", "C", "D"]
-observed = ["A", "B", "D"]
-
-result = nri_nti(tree, pool, observed; nreps = 999, seed = 20260713)
-result.nri
-result.nti
-result.status   # :ok 或 :null_sd_zero
-```
-
-零模型从物种池中无放回抽取与观测群落物种数相同的物种。支持 tip 标签和 tip 位置（`1:tree.ntips`）。`nri_nti` 使用稳定随机数生成器和局部虚拟树计算 MPD/MNTD，不假设全球物种池，也不在内存中保存全部零模型重复结果。兼容属性还包括 `NRI`、`NTI`、`MPD_obs` 和 `MNTD_obs`。
-
-批量分析空间网格时，可传入 `grid_id`，使每个网格的随机种子由全局种子稳定派生，不受处理顺序影响：
-
-```julia
-result = nri_nti(tree, pool, observed;
-    nreps = 999,
-    seed = 20260713,
-    grid_id = "1745",
-)
-```
-
-派生后的实际种子保存在 `result.seed`。不要同时传入 `grid_id` 和显式的 `rng`，因为传入的 RNG 已定义随机数流。
-
-对于大量网格，`nri_nti_table` 接受两张标准分隔长表：一张为本地物种池，一张为观测群落；两表均使用 `grid_id`、`species` 两列。表格可以是 CSV、TSV、TXT 或 CSV.jl 支持的其他分隔格式；需要显式指定制表符时使用 `delim = '\t'`。每个文件中同一网格的记录必须连续。Julia 启动了多个线程时，可并行处理网格。请将下例中的文件路径替换为实际输入。
-
-```julia
-batch = nri_nti_table(tree, "local_pool.tsv", "observed_community.tsv";
-                        nreps = 999, seed = 20260713, threaded = true,
-                        delim = '\t')
-batch.grid_ids
-batch.results
-```
 
 ## 特有性、相对 PD 与 beta 分解
 
@@ -416,38 +250,15 @@ phylo_subset.pooled_pd       # 16，仅包含所选群落占据的分支
 
 上下文调用复用分支集合，并在所选范围内重新统计占据数，不改变 WE/PE 使用的完整群落占据统计。至少选择两个群落；空群落和零 PD 群落均保留。所有 PD 为零时三项均为 `NaN`；只有一个正 PD 群落时，总差异为一，周转和嵌套为 `NaN`；其余情况按各成分分母判断。选择两个群落时退化为 `phylobeta`。输入不修改，也不建立完整两两矩阵；算法说明见[性能专题](performance_zh.md#多群落系统发育-beta)。
 
+
+### 群落间系统发育距离
+
+`comdist`、`comdistnt`、UniFrac/PhyloSor、指定群落对和重复距离计算见[群落距离](community_distances_zh.md)。
+
+## NRI 和 NTI
+
+本地物种池、正负号约定和批量 NRI/NTI 见[零模型与群落结构](null_models_zh.md#nri-和-nti)。
+
 ## 系统发育 beta SES
 
-`phylobeta_ses` 复用现有 SES 的稀疏随机化和在线统计，对一个系统发育 beta 成分计算标准化效应量。每次选择 `:sorensen` 或 `:jaccard`，以及 `:total`、`:turnover` 或 `:nestedness` 之一。
-
-```julia
-using Random
-
-effect = phylobeta_ses(comm, tree; index_family = :sorensen,
-    component = :turnover, null_model = :taxa_labels, runs = 999,
-    pairs = [(1, 2)], rng = MersenneTwister(42))
-effect.observed
-effect.null_mean
-effect.null_sd
-effect.z_score
-effect.p_value
-effect.valid_replicates
-```
-
-支持稠密/CSC 矩阵和 `CommunityData`，所有正丰度视为存在。完整树物种池始终参与抽样，包括未观测物种；`CommunityData` 按物种名对齐并补零，直接矩阵输入须保留每个树 tip 的列。
-
-| 零模型 | 随机化与约束 |
-| --- | --- |
-| `:taxa_labels`（别名 `:tipshuffle`） | 所有群落共用一次树 tip 标签置换，保留全部分类学群落对重叠数。 |
-| `:richness`、`:sample_pool` | 各群落独立从完整树物种池抽取原丰富度的物种。 |
-| `:phylogeny_pool` | 丰富度抽样后，再共用一次标签置换。 |
-| `:frequency` | 保持每个物种的群落占据数，随机分配其出现位置；群落丰富度可以变化。 |
-| `:trialswap`、`:independentswap` | 棋盘格交换同时保持行列和，每次重复从观测群落重新开始。 |
-
-交换次数由 `iterations` 和 `max_attempts_per_swap` 控制，有限交换不保证均匀抽样。对比不同成分时，每次新建相同种子的 RNG 并使用相同参数，即可使用相同随机样本。
-
-`PhylobetaSESResult` 包含上述六组数组、群落标签和丰富度、指定对及零模型参数。默认返回完整对称矩阵；`pairs` 返回按请求顺序排列的向量，保留重复、反向及自配对。每次仍随机化完整输入，仅构建指定端点的分支集合；在线统计不保留各次随机距离矩阵，指定对输出也不分配完整群落间矩阵。
-
-均值和样本 SD 只使用有限随机值，`valid_replicates` 逐对记录次数。没有有效值时均值/SD/z/p 为 `NaN`；只有一个时 SD/z 为 `NaN`；常量零模型保留 SD=0、z=`NaN`。观测 beta 非有限时，即使有有限的零模型统计，z/p 仍为 `NaN`。空群落和零 PD 群落沿用 `phylobeta` 规则，包括未定义的对角线。
-
-下尾中秩分数为 `p = (1 + 小于观测值的次数 + 0.5 × 相等次数) / (有效次数 + 1)`，相等按计算值精确判定。它不是双尾 p 值；分母采用有效次数，旧的群落内 SES 仍保留 `runs + 1`。R 的 `rowwise`、`colwise` 标签重排会被对齐抵消，因此拒绝这两个模型；也不沿用 R 将零 SD 替换为一的做法。SES z 值可能为负或未定义，不宜作为 `phyloregion` 的距离输入。
+随机化模型、有效重复数及 z/p 值解释见 [beta SES](null_models_zh.md#系统发育-beta-ses)。

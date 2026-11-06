@@ -1,8 +1,10 @@
 # 系统发育信号
 
-[首页](../README_zh.md) · [English](signals.md)
+[文档目录](README_zh.md) · [首页](../README_zh.md) · [English](signals.md)
 
-Pagel's lambda、K、独立对比及二元性状 D。
+本页：[Lambda](#pagels-lambda) · [K 与 PIC](#系统发育-kphylok) · [二元性状 D](#系统发育-d)
+
+Pagel's lambda、K、独立对比及二元性状 D。物种组合的 [NRI/NTI 和群落 SES](null_models_zh.md)另列说明。
 
 本页示例共用以下四物种树。
 

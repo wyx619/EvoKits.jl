@@ -1,6 +1,8 @@
 # Trees
 
-[Home](../README.md) · [简体中文](trees_zh.md)
+[Documentation](README.md) · [Home](../README.md) · [简体中文](trees_zh.md)
+
+On this page: [I/O and queries](#tree-io-and-topology) · [Posterior input](#posterior-tree-streams-and-samples) · [Pruning and mapping](#prune-and-map-trees) · [Tree completion](#taxonomy-aided-tree-completion) · [Time slices](#tree-branch-time-slices)
 
 Read, query, prune, complete and map trees, or compare branch history at different time depths.
 

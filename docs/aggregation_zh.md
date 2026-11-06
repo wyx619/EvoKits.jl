@@ -1,6 +1,8 @@
 # 性状与群落聚合
 
-[首页](../README_zh.md) · [English](aggregation.md)
+[文档目录](README_zh.md) · [首页](../README_zh.md) · [English](aggregation.md)
+
+本页：[性状汇总](#群落性状与物种分组) · [功能分组](#混合性状与功能-beta) · [组数选择](#功能组数评估与选择) · [谱系聚合](#树分组与谱系群落聚合)
 
 汇总群落性状，按预定义分组、功能组或谱系组聚合物种。
 
@@ -31,7 +33,7 @@ beta_diss(grouped) # 分组后的 CommunityData 可直接用于分类指标
 
 `aggregate_species` 返回新的 `CommunityData`，CSC 列对应物种组。默认统计每组存在的物种数；`abundance_weighted=true` 汇总丰度并保留数值类型（Bool 转 Int）。`normalize=true` 返回各群落保留分组的 Float64 比例，空行仍为零。组名使用字符串或整数，默认按输入物种列首次出现的组排序，包含已映射零列对应的组；`group_labels` 可固定完整顺序并保留额外空组。性状表列由 `species`/`trait` 选择，分组表列由 `species`/`group` 选择。输入不会被修改，CSC 输入不展开为稠密群落矩阵或长出现记录。分组由调用者提供，物种聚类与地理绘图分别处理。
 
-[`community_longtable`](community_zh.md#导出长表与重建群落) 可导出 `aggregate_species`、`collapse_traits` 返回的群落，以及 `collapse_range(...).community`，同时保留丰度、比例和完整标签列表。
+[`community_longtable`](community_input_zh.md#导出长表与重建群落) 可导出 `aggregate_species`、`collapse_traits` 返回的群落，以及 `collapse_range(...).community`，同时保留丰度、比例和完整标签列表。
 
 ## 混合性状与功能 beta
 
@@ -66,7 +68,7 @@ fb = functional_beta(data, traits; k = 2, rng = MersenneTwister(42))
 
 `collapse_traits` 支持 `:presence`、`:richness`、`:abundance` 及行比例归一化，保留全部功能组和空群落。`functional_beta` 可传 `pairs` 只计算指定群落对；其 beta 始终基于功能组是否出现，`statistic=:abundance` 只改变返回的聚合群落数值。本实现的尺度和初始化规则是上面明确列出的约定，不承诺与 R 随机分组逐项相同。
 
-已用本地 clustMixType 0.5.2 对照 40 个案例：对齐尺度、权重与初始原型后，分组、目标值、原型、稀疏聚合及 beta 一致。自动权重默认值、并列分配和重复/空组处理按各自约定；普通 Julia 测试读取六个固定 R 案例，不需要 R 环境。
+与 R clustMixType 比较时，应对齐尺度、权重和初始原型；自动权重默认值、并列分配及重复/空组处理遵循上述约定。
 
 ### 功能组数评估与选择
 

@@ -1,6 +1,8 @@
 # Traits and community aggregation
 
-[Home](../README.md) · [简体中文](aggregation_zh.md)
+[Documentation](README.md) · [Home](../README.md) · [简体中文](aggregation_zh.md)
+
+On this page: [Trait summaries](#community-traits-and-species-groups) · [Functional groups](#mixed-traits-and-functional-beta) · [Group-count selection](#choose-a-functional-group-count) · [Lineages](#tree-groups-and-lineage-communities)
 
 Summarize community traits and aggregate species into predefined, functional or lineage groups.
 
@@ -49,7 +51,7 @@ and zero used weight. Corrected SD with one matched species is NaN;
 population SD is zero.
 
 `aggregate_species` returns a new `CommunityData` whose CSC columns are groups.
-Use [`community_longtable`](community.md#export-a-long-table-and-reconstruct-the-community)
+Use [`community_longtable`](community_input.md#export-a-long-table-and-reconstruct-the-community)
 to export grouped abundances or proportions with their complete label domains;
 the same export accepts `collapse_traits` output and `collapse_range(...).community`.
 By default entries count present species; `abundance_weighted=true` sums
@@ -119,11 +121,9 @@ supports selected `pairs`; beta always uses group presence, even when the
 returned community contains abundances. Scaling and initialization follow the
 rules above and do not promise identical random clusters to R.
 
-Forty cases were checked against local clustMixType 0.5.2. With matching
-scales, weights and initial prototypes, memberships, objectives, prototypes,
-sparse aggregation and beta components agree. Default weight estimation,
-ties and duplicate/empty-group handling retain their documented differences.
-Ordinary Julia tests read six saved R cases and require no R environment.
+When comparing with R clustMixType, match scales, weights and initial
+prototypes. Default weight estimation, ties and duplicate/empty-group handling
+follow the conventions above.
 
 ### Choose a functional group count
 

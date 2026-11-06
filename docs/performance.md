@@ -1,773 +1,391 @@
 # Performance
 
-[Home](../README.md) · [简体中文](performance_zh.md)
+[Documentation](README.md) · [Home](../README.md) · [简体中文](performance_zh.md)
 
-Runtime backend and benchmark timings.
+On this page: [Choose a route](#choose-a-computation-route) · [Measurement](#performance-benchmarks) · [Posterior means](#direct-posterior-beta-means) · [Distances](#community-phylogenetic-distances) · [Moments](#analytical-diversity-moments) · [PD/bootstrap](#pd-variants-and-bootstrap) · [Clustering/NMDS](#regionalization-and-ordination)
+
+Choose a computation route, understand its memory requirements, and interpret
+the recorded benchmarks. Models and calling examples live in the topic guides.
+
+## Choose a computation route
+
+| Need | Route | Remaining cost |
+| --- | --- | --- |
+| Large, sparsely occupied species pool | CSC `CommunityData`; automatic connecting trees | Original input/tree validation and preparation |
+| Several PD/PE/beta calls on identical inputs | `prepare_community` | Stored branch sets; output allocation per call |
+| Repeated `comdist` / `comdistnt` | `prepare_community_distances`; fix `pairs` if known | One-time preparation and retained workspaces |
+| PSV, PSE and PSC together | `psd` | Full-pool variance when enabled |
+| Rao summaries without site-pair matrices | `raoD(...; pairwise=false)` | Per-site and pooled calculation |
+| Few Expected PD richness values | `expected_pd(...; richness=values)` | Linear tree preparation |
+| Posterior-tree uncertainty | `mean_dist(data, trees)` over a `TreeStream` | Per-tree matching/branch sets and requested output |
+| A few site comparisons | Supported `pairs` interfaces | Full-input validation; full-community null draws for beta SES |
+
+Dense inputs still require scanning all cells. Complete site-pair outputs have
+a quadratic lower bound even when their inputs and workspaces are sparse.
 
 ## Runtime
 
-EvoKits loads MKL as its first dependency and supports selecting Intel MKL as
-the BLAS backend.
+EvoKits loads MKL before other dependencies to select its BLAS backend.
+Julia threads and BLAS threads are separate settings. The measurements below
+use one of each; tree kernels do not become faster merely by increasing BLAS threads.
 
 ## Performance Benchmarks
 
-Set `path` to the Newick file to measure:
+Tables summarize recorded local measurements, not a fresh benchmark of every
+release. Unless stated otherwise: Julia 1.12.7, one Julia/BLAS thread, serial
+execution, median of three calls after warm-up. Public-call times include
+validation, preparation and output allocation; input construction is excluded.
+Some measurements also record an Intel i5-12400. Shape, occupancy, branch scale,
+requested output and hardware affect the result; automatic routes need not win
+for every input.
+
+Keep these quantities separate:
+
+| Quantity | Meaning |
+| --- | --- |
+| Cumulative allocation | Bytes allocated during a call, including temporary objects |
+| Retained size | Reachable result/context objects measured with `Base.summarysize`; excludes unreferenced inputs |
+| Array payload | Analytical byte count, excluding object headers and allocator overhead |
+| Process peak RSS | Whole-process maximum, including loading/JIT and earlier work |
+
+MB/GB are decimal. No peak RSS was measured for tables below except the
+explicit mean-accumulator process experiment. Historical private-kernel timings
+are not public-call benchmarks.
+
+For a small local measurement, start Julia with one thread and run:
 
 ```julia
-using EvoKits
-
-tree = read_tree(path)
-n = tree.ntips
-distances_from_root(tree)
-evol_distinct(tree)
-sample = zeros(Int, 1, n)
-sample[1, 1:div(n, 2)] .= 1
-pd(sample, tree)
+using EvoKits, LinearAlgebra, Statistics
+BLAS.set_num_threads(1)
+tree = mktempdir() do dir
+    path = joinpath(dir, "star.nwk")
+    write_tree(path, "(" * join(("sp_$i:1" for i in 1:128), ",") * ");")
+    read_tree(path)
+end
+call() = expected_pd(tree; richness = [10, 50, 100], upper_bound = false)
+call()                         # compile and warm up
+samples = map(1:3) do _
+    GC.gc()                    # outside the timed call
+    @timed call()
+end
+median(s.time for s in samples)
+median(s.bytes for s in samples)
+Base.summarysize(call())       # retained result, not process peak
 ```
 
-| Tips | read_tree | Root distances | ED | Single-site PD |
-| ---: | ---: | ---: | ---: | ---: |
-| 10,000 | 0.0170 s | 0.000045 s | 0.000209 s | 0.000807 s |
-| 100,000 | 0.2786 s | 0.000302 s | 0.001825 s | 0.013961 s |
-| 200,000 | 0.5099 s | 0.059488 s | 0.003887 s | 0.017693 s |
-| 500,000 | 1.6090 s | 0.260128 s | 0.010796 s | 0.154415 s |
-
-Measurements use balanced rooted trees with unit branch lengths on Julia 1.12.7
-after a warm-up.
-
-`CompactTree` conversion now builds postorder iteratively in linear time and
-heap storage, preserving child order and avoiding depth recursion. A separate
-regression reads actual 65,536-tip left/right combs and a unary chain of depth
-65,536. Complete `read_tree` calls for those combs take 136/126 ms and cumulatively
-allocate 119.73/116.18 MB on Julia 1.12.7, with one Julia/BLAS thread and the
-median of three runs after warm-up. Both results retain 17.89 MB; these quantities
-are not process peak memory. On 8,192-tip trees, conversion timings remain
-similar to the recursive implementation, with lower cumulative allocations.
+The notation below uses n sites, p tips, e tree nodes, q positive site–tip
+records, r species per site and v working-tree nodes. `nnz` includes stored
+zero entries in CSC input. Additional symbols are defined in their sections.
 
 ## Posterior tree input
 
-`read_trees` scans once, retaining the current command/record and parsed tree
-plus source paths and the current NEXUS translation table. Metadata storage
-does not grow with the number of trees; skipped blocks are framed command by
-command. `tree_sampler` scans input twice, parses only selected records,
-and retains O(n) draw metadata plus sampled trees. Without-replacement indices
-use a partial Fisher-Yates shuffle over a dictionary, with no array sized to
-the posterior population. Repeated draws are parsed once and copied.
+`read_trees` scans once and retains the current record/tree, source paths and
+current NEXUS translation table. It does not collect all posterior trees.
+`tree_sampler` scans twice, parses only selected records and retains draw
+metadata plus sampled trees. Dictionary-based partial Fisher–Yates sampling
+avoids an index vector sized to the whole population; repeated selected records
+are parsed once and copied.
 
-Storage regressions check a stream after 2,000 records, three sampled trees
-from 5,000 records in Newick and NEXUS, and eight distinct indices from a population of 10^12.
-These bound retained objects/index allocations, not peak process memory or
-runtime. The downstream `mean_dist` generator retains no collection of beta
-matrices; full site distances still require quadratic storage, while selected
-pairs use linear storage in sites and requested pairs.
+`CompactTree` conversion builds postorder iteratively in linear work/storage,
+preserving child order. Complete `read_tree` calls on actual 65,536-tip left/right
+combs took 136/126 ms, allocated 119.73/116.18 MB, and retained 17.89 MB per tree.
+This measures reading, parsing and conversion together. Deep-input support does
+not imply that every downstream tree operation uses iterative traversal.
 
 ## Direct posterior beta means
 
-`mean_dist(data, trees)` prepares presence records and requests once, evaluates
-only the requested component, and updates the existing compensated mean state.
-Tree-dependent branch buffers reuse capacity but are rebuilt for each tree.
-Selected pairs are deduplicated and retain only their endpoints; no per-tree
-three-component results or full matrices are created for this route.
+`mean_dist(data, trees)` prepares community records and requests once, computes
+one beta component per tree, and updates a scaled compensated mean. Tree-specific
+branch sets and label matching are rebuilt for each draw, with buffer capacity
+reused. It avoids a three-component beta result for every tree.
 
-With at least 128 sites, a sparse branch-to-site index is built directly in
-reusable pointer/member buffers, and its product is scattered into one
-`n × block_size` column buffer, visiting the lower triangle. No generic CSC
-matrices, numeric membership values, weighted copies, per-block slices or
-sparse result matrices are created. For branch occupancy d, this
-shared-length work is proportional to `sum(d*(d+1)/2)`, plus `O(n²)` cell work
-and incidence preparation. Small full outputs and requested pairs merge sorted
-branch sets. Near cancellation, original unique branches are summed directly;
-this fallback can add merge work on nested or extreme-scale inputs.
+For full outputs with at least 128 sites, sparse branch-to-site memberships
+scatter shared lengths into one `n × min(n, block_size)` column buffer. Shared
+work follows branch occupancy, `sum(d*(d+1)/2)`, plus quadratic cell work.
+Small outputs and selected pairs merge sorted branch sets; near cancellation,
+unique branches are summed directly. Deep combs can retain long, highly shared
+branch sets, so their complete matrices remain costly.
 
-For e tree nodes, p tips, q retained presence records, b branch memberships and
-k requests, selected auxiliary storage is `O(e+p+q+b+n+k)`. Full output uses
-`O(e+p+q+b+n²+n*min(n,block_size))`, including two full result matrices and
-two triangular scale/correction buffers;
-only the mean and count matrices remain in the returned result. Tree parsing,
-branch collection/sorting and label matching still cost work per tree. This
-optimization does not remove the final matrix's quadratic lower bound.
-
-The following earlier measurements, before triangular scratch storage, compare
-the `mean_dist(phylobeta(...) for ...)` route
-with direct accumulation. Julia 1.12.7 / i5-12400, one Julia/BLAS thread,
-warmed medians of three serial runs; 10,000 tips, 256 sites, three present
-species per site, eight draws, unit branches and `block_size=64`. Each synthetic
-ensemble repeats the same tree to isolate computation. Four pair requests
-contain three unique unordered pairs, including a self pair.
-
-| Tree | Output | Generator | Direct | Generator allocated | Direct allocated |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Balanced | Full | 30.0 ms | 7.02 ms | 57.05 MB | 3.95 MB |
-| Balanced | Pairs | 9.65 ms | 1.22 ms | 11.42 MB | 1.09 MB |
-| Comb | Full | 3.09 s | 1.15 s | 851.31 MB | 89.26 MB |
-| Comb | Pairs | 121 ms | 2.51 ms | 206.99 MB | 1.95 MB |
-| Star | Full | 15.2 ms | 4.63 ms | 24.71 MB | 3.41 MB |
-| Star | Pairs | 10.7 ms | 1.75 ms | 8.89 MB | 0.972 MB |
-
-Deep combs retain long branch sets and high shared-branch occupancy, so their
-full matrices remain costly. Tests also cover 16 sites, different tip orders,
-different trees, component-specific NaNs, and extreme shared stems. Column-block
-measurements cover sizes 1/16/64/256: a larger block changes temporary storage,
-not arithmetic results. Allocations are cumulative, not peak memory. The
-selected-pair storage regression uses 6,000 sites and 40,000 tips with four
-requests, retaining twelve observation records and four endpoint branch sets.
+For b retained site-branch memberships and k requests, selected auxiliary
+storage is `O(e+p+q+b+n+k)`. Full output needs
+`O(e+p+q+b+n²+n*min(n,block_size))`. A smaller block controls temporary storage,
+not the final quadratic mean/count matrices.
 
 ### Mean accumulator storage
 
-Both `mean_dist(inputs)` and `mean_dist(data, trees)` retain full sums/counts
-matrices as their eventual output, while scales/corrections use packed lower
-triangles including the diagonal. Accumulation and finalization use distinct
-output and scratch indices. The scaled compensated sum, finite counts,
-NaN/diagonal rules and posterior shared-branch blocks are unchanged. The
-final mean is written and mirrored in place; no replacement output is allocated.
-Selected pairs keep one-dimensional state and their existing storage cost.
+Both mean entry points retain full sum/count matrices as eventual outputs and
+packed lower triangles for scale/correction scratch. Finalization normalizes
+and mirrors in place. With 64-bit Int/Float64 the array payload is `24n²+8n`
+bytes; returned mean/count arrays alone need `16n²`. At n=6,000 these are
+0.864 GB and 0.576 GB respectively. Selected pairs use four one-dimensional
+arrays rather than matrix state.
 
-With n sites, 64-bit Int and Float64, array payload changes from `32n²` to
-`24n²+8n` bytes, approaching a 25% reduction. At 6,000 sites this is
-1.152→0.864 GB; the final two output matrices alone still require 0.576 GB.
-Packing all four buffers would halve accumulation storage but require two
-new full output matrices. A prototype retaining both packed state and expanded
-output measured 134.25 MB of objects at 2,048 sites, versus 100.68 MB for the
-chosen layout. These are array/object sizes, not process peaks.
+Recorded public calls with 2,048 sites and eight draws:
 
-The comparisons below use Julia 1.12.7, one Julia/BLAS thread, serial warmed
-medians of three runs, against the preceding four-full-matrix implementation.
-Public timings include validation, preparation, accumulation and final output;
-input construction is excluded. Dense/lazy inputs contain finite/NaN values
-and extreme scales. The subset input permutes half the labels; the remaining
-output sites have no observations. The posterior case uses a 256-tip unit-branch
-star, one present tip per site and `block_size=64`.
+| Input | Time | Cumulative allocation |
+| --- | ---: | ---: |
+| Dense distance matrices | 472 ms | 103.03 MB |
+| Lazy distance matrices | 586 ms | 103.03 MB |
+| Direct posterior beta; 256-tip star, one species/site, block=64 | 236 ms | 102.47 MB |
 
-| Input | Sites | Draws | Previous | Current | Previous allocated | Current allocated |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Dense distances | 2,048 | 8 | 484 ms | 472 ms | 136.57 MB | 103.03 MB |
-| Lazy distances | 2,048 | 8 | 576 ms | 586 ms | 136.57 MB | 103.03 MB |
-| Permuted subset | 1,024 | 8 | 90.7 ms | 89.7 ms | 34.08 MB | 25.70 MB |
-| Posterior beta | 2,048 | 8 | 243 ms | 236 ms | 136.00 MB | 102.47 MB |
-
-The grid covers 36 public comparisons, including balanced/comb/star posterior
-trees and selected pairs; 11 cases were rechecked in three alternating batches.
-The table uses the alternating results where available. Runtime remains close
-and depends on the input; this change primarily reduces accumulator storage.
-In particular, it does not reduce high-occupancy comb-tree branch products or
-the quadratic output bound. Allocation savings match the removed triangles.
-
-Separate stages at 2,048 sites and eight lazy draws retain 134.22→100.68 MB
-of accumulator objects; the two result arrays retain 67.11 MB in both versions.
-Measured accumulation and finalization allocate zero bytes; finalization takes
-47.8→48.8 ms. Stage medians are not added to infer an exact public timing.
-Three fresh processes per version, each loading/warming the same modules,
-measure a 4,096-site, two-draw public call with lazy inputs. Median cumulative
-allocation is 539.14→404.95 MB; `Sys.maxrss()` reports total process peaks of
-1,081.78→947.79 MB, including roughly 551 MB of prior load/JIT peak. This is
-about a 12% process-peak reduction in that experiment, distinct from the 25%
-array-payload reduction. Inputs, retained output, cumulative allocation and
-process RSS are reported separately; no forced GC occurs inside the public call.
+A separate fresh-process experiment used 4,096 sites, two lazy draws, three
+processes and the same load/warm-up sequence. Median cumulative allocation was
+404.95 MB and process peak RSS 947.79 MB, including about 551 MB of prior
+load/JIT peak. Those totals cannot be inferred from the array-payload formula.
 
 ## Community long-table export
 
-For n sites, p species and q positive records, `community_longtable` takes
-`O(nnz+n+p)` work for CSC input and `O(n*p+n+p)` for dense input, including
-validation. Output and temporary storage are `O(q+n+p)`. CSC input is scanned
-directly; neither a dense matrix nor an abundance-expanded occurrence table
-is created. Label domains are copied even if there are no positive records.
-
-The storage regression exports four values from a 10,000 × 50,000 CSC matrix,
-with one abundance of 1e100, against a 40 MB cumulative-allocation bound after
-compilation and a 6 MB retained-output bound. These are regression limits,
-not peak-memory or timing measurements.
+For q positive values, `community_longtable` uses `O(nnz+n+p)` work on CSC input
+or `O(n*p+n+p)` on dense input. Output and temporary storage are `O(q+n+p)`.
+Values are neither densified nor expanded by abundance; full label domains are
+copied even for empty inputs. Storage regressions are allocation bounds, not
+timing or process-peak measurements.
 
 ## Community phylogenetic distances
 
-`comdist` processes one target community at a time. A postorder pass sums
-target weights and weighted distances below each node; a preorder pass adds
-contributions from outside each subtree. Prefix/suffix sibling sums avoid
-subtraction of nearly equal masses and long shared root paths. `comdistnt`
-propagates the two nearest distinct target identities in two passes, retaining
-an eligible alternative when excluding the source species. Row weights are
-scaled before normalization to avoid overflowing abundance sums/products.
+`comdist` uses postorder/preorder target-weight and distance passes;
+`comdistnt` propagates the two nearest distinct target identities. Original
+branch segments and stable sibling sums preserve short paths below long stems.
+Abundance normalization scales weights first to avoid overflowing sums.
 
-For n sites, s nonempty targets, p tips, e tree nodes and q observed site–tip
-records, CSC preparation takes `O(nnz+p+n+e)` work, followed by
-`O(s*(e+q)+n^2)` work for the full-tree route. Dense preparation scans `n*p`
-values. No full tip-distance, tip-pair weight, site-by-branch or dense community
-matrix is built. Both functions can reuse a compressed connecting tree within
-the call. `prepare_community_distances` also retains prepared records,
-topology and workspaces for repeated calls.
+CSC preparation costs `O(nnz+p+n+e)`; dense input additionally scans n*p cells.
+Automatic contraction keeps at most `2u-1` nodes for u observed tips, summing
+original branches and discarding the common stem above their LCA. Dense
+occupancy retains the full tree. The selection policy is an internal heuristic.
 
-Both functions can contract the tree once to their u observed tips and connecting
-nodes, retaining at most `2u-1` nodes. A linear postorder pass removes
-unobserved subtrees and contracts unary paths by adding original edge lengths.
-The common stem above the observed LCA is discarded. This gives cancellation
-safe segments on deep combs without constructing a binary LCA index or sorting
-tip IDs. Each function's two-pass kernel then visits only the compressed tree.
-
-With `pairs`, validation still covers the full input, while row preparation
-retains requested endpoints only. Unordered pairs are deduplicated;
-`comdist` groups canonical targets, while `comdistnt` schedules both directional
-queries by target. Each needed target is traversed once and each unique pair
-is evaluated once; reversed/repeated values are identical. Endpoints
-paired only with empty sites do not enlarge the connecting tree. Let k be
-the number of requests, t the number of distinct valid canonical targets,
-qR the retained records and v the working tree size. After preparation and
-`O(e+qR)` contraction, selected work is `O(k log k+t*v+P+k)`, where P sums
-the source-site richness over unique directional queries (`comdistnt` visits
-both directions). Auxiliary storage is
-`O(p+n+e+qR+k+v)`, and output is a length-k vector. Full output still needs
-`O(n^2)` storage and `O(t*(v+q)+n^2)` work after preparation.
-
-The automatic route uses compression for trees of at least 256 nodes when
-`2u-1 <= e/4`, tightened to `e/16` for a single target. Serial calibration
-compares both routes over tree shapes, site counts and occupancy; dense
-occupancy stays on the full-tree route to avoid compression allocations.
-Occupancy checking stops once the compression threshold has been exceeded,
-avoiding scans of remaining repeated records on dense inputs.
-The policy is conservative and does not claim the fastest route for every
-dataset. Each direct matrix/data call still scans the original tree/input;
-prepared-context calls reuse that work.
-
-Earlier dense-to-sparse comparisons used balanced unit-branch trees,
-eight observed species per site, one Julia/BLAS thread and the median of three
-measurements after warm-up:
-
-| Call | Sites × tips | Dense path | Sparse tree passes | Dense allocation | Sparse allocation |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Weighted `comdist` | 8 × 1,024 | 354 ms | 0.191 ms | 613 MB | 0.129 MB |
-| Weighted `comdistnt` | 24 × 2,048 | 53.3 ms | 0.613 ms | 66.5 MB | 0.166 MB |
-
-These small synthetic cases demonstrate the removed overhead; timings depend
-on tree shape, site count and occupancy. Allocations are cumulative, not peak
-memory. Separate storage regressions check 12 sites, 20,000 tips and 36 stored
-values against a 15 MB allocation bound after compilation for each function.
-Selected-pair storage also checks 6,000 sites × 40,000 tips with 18,000 stored
-values: four requests retain 12 endpoint records and a 13-node star, under a
-10 MB cumulative-allocation bound. These are regression bounds, not peak memory.
+After preparation, full output costs `O(t*(v+q)+n²)` for t needed targets.
+For k selected requests, sorting/scheduling takes `O(k log k)` and evaluation
+`O(t*v+P+k)`, where P sums source richness over unique directional queries.
+Full inputs remain validated, but only effective requested endpoints are retained.
 
 ### Comdist virtual trees and selected pairs
 
-The following measurements compare the preceding sparse full-tree implementation
-with automatic compression. They use Julia 1.12.7 on an i5-12400, one Julia/BLAS
-thread and the median of three calls after warm-up. Trees have unit branches;
-each site has three observations with abundances `[1,2,3]`, and abundance
-weighting is enabled. Tree construction is excluded; public-call preparation
-and the complete matrix output are included:
+Recorded full public calls: 100,000 unit-branch tips, 64 CSC sites, three
+species/site with abundances `[1,2,3]`, abundance weighting enabled:
 
-| Shape | Tips | Sites | Full-tree baseline | Automatic | Baseline allocation | Automatic allocation |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Balanced | 100,000 | 8 | 36.1 ms | 1.15 ms | 12.0 MB | 1.64 MB |
-| Balanced | 100,000 | 64 | 300 ms | 1.08 ms | 12.1 MB | 1.74 MB |
-| Comb | 100,000 | 8 | 40.1 ms | 0.782 ms | 12.0 MB | 1.64 MB |
-| Comb | 100,000 | 64 | 317 ms | 1.06 ms | 12.1 MB | 1.74 MB |
-| Star | 100,000 | 8 | 14.5 ms | 0.518 ms | 6.40 MB | 1.22 MB |
-| Star | 100,000 | 64 | 106 ms | 0.639 ms | 6.45 MB | 1.31 MB |
+| Shape | Time | Cumulative allocation |
+| --- | ---: | ---: |
+| Balanced | 1.08 ms | 1.74 MB |
+| Comb | 1.06 ms | 1.74 MB |
+| Star | 0.639 ms | 1.31 MB |
 
-Private route comparisons on the 100,000-tip balanced tree with 64 sites
-give the following selected-pair measurements. Input preparation is included;
-pair-argument parsing is outside timing. Four requests are
-`[(1,64),(3,4),(4,3),(1,1)]`; the chain requests adjacent site indices:
-
-| Requests | Forced full tree | Automatic | Full-tree allocation | Automatic allocation |
-| --- | ---: | ---: | ---: | ---: |
-| One pair | 7.60 ms | 1.06 ms | 12.0 MB | 1.64 MB |
-| Four requests | 13.9 ms | 1.03 ms | 12.0 MB | 1.64 MB |
-| Chain, 63 pairs | 306 ms | 1.14 ms | 12.0 MB | 1.71 MB |
-
-Measured separately on the same balanced input, record preparation takes
-0.330 ms / 0.820 MB and contraction to 383 nodes takes 0.603 ms / 0.842 MB.
-With already allocated workspaces, one target pass takes 4.67 ms on the full
-tree and 0.00640 ms on the compressed tree; both allocate zero bytes. These
-internal passes exclude preparation; the public context described below
-retains the complete preparation and workspaces.
-
-Direct matrix/data calls still require linear preparation, and complete
-matrices retain quadratic output storage. Denser cases
-retain the full route: a 1,000-tip star with 64 sites changed from 0.521 to
-0.535 ms. Timings vary with occupancy, shape and hardware; the policy does
-not guarantee an improvement for every input. All MB figures are decimal
-cumulative allocations, not peak memory.
+Fewer pairs reduce target passes and output, while direct calls still prepare
+the original input. Repeated work benefits from the context below.
 
 ### Comdistnt virtual trees and directional requests
 
-The same serial protocol compares `comdistnt` with its preceding sparse
-full-tree implementation. Both exclusion settings are measured; this table
-uses abundance weighting and `exclude_conspecifics=true`, three observations
-per site and complete public-call matrix output, including preparation:
+The same input with `exclude_conspecifics=true`:
 
-| Shape | Tips | Sites | Full-tree baseline | Automatic | Baseline allocation | Automatic allocation |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Balanced | 100,000 | 8 | 9.98 ms | 1.00 ms | 7.20 MB | 1.64 MB |
-| Balanced | 100,000 | 64 | 68.9 ms | 1.16 ms | 7.25 MB | 1.73 MB |
-| Comb | 100,000 | 8 | 10.1 ms | 0.830 ms | 7.20 MB | 1.64 MB |
-| Comb | 100,000 | 64 | 72.7 ms | 1.21 ms | 7.25 MB | 1.73 MB |
-| Star | 100,000 | 8 | 4.67 ms | 0.489 ms | 4.00 MB | 1.22 MB |
-| Star | 100,000 | 64 | 34.4 ms | 0.662 ms | 4.05 MB | 1.30 MB |
+| Shape | Time | Cumulative allocation |
+| --- | ---: | ---: |
+| Balanced | 1.16 ms | 1.73 MB |
+| Comb | 1.21 ms | 1.73 MB |
+| Star | 0.662 ms | 1.30 MB |
 
-For the same 100,000-tip balanced input with 64 sites, selected requests
-include input preparation but exclude pair-argument parsing. The four-request
-and chain definitions match the preceding `comdist` table. Each unique pair
-requires both directions; target passes are shared between requests:
-
-| Requests | Forced full tree | Automatic | Full-tree allocation | Automatic allocation |
-| --- | ---: | ---: | ---: | ---: |
-| One pair | 3.94 ms | 0.978 ms | 7.21 MB | 1.64 MB |
-| Four requests | 5.75 ms | 1.08 ms | 7.21 MB | 1.65 MB |
-| Chain, 63 pairs | 69.0 ms | 1.09 ms | 7.23 MB | 1.71 MB |
-
-Measured independently on the complete balanced input, record preparation
-takes 0.329 ms / 0.820 MB and contraction to 383 nodes takes
-0.600 ms / 0.842 MB. With prepared workspaces, one target pass takes
-1.21 ms on the full tree and 0.00480 ms on the compressed tree, both with
-zero allocated bytes. These passes exclude preparation and directional
-source averaging; the public context reuses preparation and workspaces.
-
-Sparse large-tree improvements do not imply a speedup for every input.
-The 1,000-tip star with 64 sites stays on the full route; without exclusion
-it changed from 0.448 to 0.470 ms. Full output still needs quadratic storage,
-and each direct matrix/data call still validates/prepares the complete original input.
-All allocations are cumulative, not peak memory.
+Each unique pair needs both directions; grouping by target shares tree passes.
+Different species at zero distance remain eligible when excluding conspecifics.
 
 ### Prepared community distances
 
-`prepare_community_distances` snapshots aligned abundance/presence records,
-one working topology and both distance workspaces. It retains
-`O(n+qR+v+k)` storage for sites, retained observations, working-tree nodes
-and fixed requests. The original matrix/tree and their full indices are not
-retained. Dense collections may keep the full topology; sparse collections
-can keep a compressed one. Unlike `CommunityContext`, no per-site branch
-sets or occupancy summaries are prepared for these distances.
+`CommunityDistanceContext` retains `O(n+qR+v+k)` records, topology, schedules
+and both weighting/distance workspaces; qR is retained presence count. It owns
+the snapshot and does not retain the original matrix/tree. Fixed requests cache
+schedules and may shrink the topology further. New requests on a complete
+context reuse its topology but incur scheduling work. A lock serializes calls
+sharing workspaces, and each result owns new arrays.
 
-Complete repeated calls cost `O(t*(v+qR)+n^2)` including new output. Fixed-pair
-calls cost `O(t*v+P+k)`, with cached ordering and directional schedules.
-Changing pair requests on a complete context still costs `O(k log k+n)` to
-schedule, but reuses its records, topology and workspaces. Such requests use
-the topology for the complete prepared collection; preparing fixed pairs
-can reduce the working tree further when only a few endpoints are needed.
+For the balanced input above, the direct route already compresses the tree:
 
-Preparation validates the full input once and owns copied values/topology.
-Repeated calls validate only new pair arguments. A lock serializes calls
-sharing the workspaces, and every result array is independent. Complete
-outputs still require quadratic storage, and preparing both weighting modes
-and workspaces costs time and retained memory up front.
+| Request / function | Direct | Reused | Direct allocation | Reused allocation |
+| --- | ---: | ---: | ---: | ---: |
+| Full `comdist` | 1.17 ms | 0.235 ms | 1.74 MB | 0.0329 MB |
+| Full `comdistnt` | 1.17 ms | 0.227 ms | 1.73 MB | 0.0329 MB |
+| Fixed four `comdist` pairs | 0.986 ms | 6.40 μs | 1.64 MB | 96 B |
+| Fixed four `comdistnt` pairs | 0.952 ms | 7.70 μs | 1.65 MB | 176 B |
 
-The following public-call comparisons use the same serial protocol,
-100,000 tips, 64 sites and three observations per site with abundances
-`[1,2,3]`. Weighting is enabled; nearest distance also excludes conspecifics.
-The direct baseline already includes automatic tree compression. Reused
-times exclude the one-time preparation:
-
-| Shape | Call | Direct | Reused | Direct allocation | Reused allocation |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Balanced | `comdist` | 1.17 ms | 0.235 ms | 1.74 MB | 0.0329 MB |
-| Balanced | `comdistnt` | 1.17 ms | 0.227 ms | 1.73 MB | 0.0329 MB |
-| Comb | `comdist` | 1.19 ms | 0.256 ms | 1.74 MB | 0.0329 MB |
-| Comb | `comdistnt` | 1.10 ms | 0.260 ms | 1.73 MB | 0.0329 MB |
-| Star | `comdist` | 0.622 ms | 0.0966 ms | 1.31 MB | 0.0329 MB |
-| Star | `comdistnt` | 0.667 ms | 0.156 ms | 1.30 MB | 0.0329 MB |
-
-On the balanced input, fixing four requests during preparation retains
-23 working-tree nodes. The requests are `[(1,64),(3,4),(4,3),(1,1)]`;
-the chain connects all adjacent site indices:
-
-| Request | Call | Direct | Reused | Direct allocation | Reused allocation |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Four | `comdist` | 0.986 ms | 6.40 μs | 1.64 MB | 96 B |
-| Four | `comdistnt` | 0.952 ms | 7.70 μs | 1.65 MB | 176 B |
-| Chain, 63 | `comdist` | 1.16 ms | 192 μs | 1.71 MB | 576 B |
-| Chain, 63 | `comdistnt` | 1.11 ms | 139 μs | 1.71 MB | 1,152 B |
-
-Changing a single pair on the complete prepared context, whose topology
-has 383 nodes, takes 10.7 μs / 240 B for `comdist` and
-12.8 μs / 640 B for `comdistnt`. This still reuses preparation but builds
-fresh request schedules. A separately prepared fixed single pair retains
-11 nodes instead.
-
-Measured separately on that balanced input, complete preparation takes
-0.978 ms / 1.75 MB cumulative allocation and retains 80.0 KB, including
-both distance workspaces and weighting modes. Fixed-four preparation takes
-1.13 ms / 1.67 MB and retains 19.8 KB. These are one-time preparation costs;
-retained object sizes exclude the original input/tree and are not peak memory.
-
-Dense cases retain most tree work. On a fully occupied 4,096-tip balanced
-tree with eight sites, `comdist` changes from 1.48 to 0.857 ms and
-`comdistnt` from 2.34 to 1.80 ms; reused allocation is 592 B each. Preparing
-that complete dense context takes 2.87 ms / 4.93 MB and retains 2.59 MB.
-All figures measure cumulative allocations, not peak memory. Reuse is
-intended for repeated analysis; preparation and retained storage must also
-be counted when evaluating one or a few calls.
+Four requests are `[(1,64),(3,4),(4,3),(1,1)]`. Reused times exclude preparation:
+full preparation took 0.978 ms / 1.75 MB allocated and retained 80.0 KB;
+fixed-four preparation took 1.13 ms / 1.67 MB and retained 19.8 KB.
+Account for these costs when evaluating only one or a few calls.
 
 ## Rao diversity partition
 
-`raoD` reuses sparse records and one two-pass tree-distance workspace. The
-default `pairwise=true` returns `Dkl`, its diagonal `Dkk`, and `H`.
-`pairwise=false` evaluates only within-site distances and the pooled community,
-returning independent `0×0` `Dkl` and `H` in the same result type. Both modes
-scale original abundances before pooling, preserving site and pooled weights.
-Neither constructs dense community, full tip-distance or tip-pair weight matrices.
+RaoD shares sparse records, the distance workspace and automatic connecting
+trees. Validation and original-abundance pooling precede compression. With s
+nonempty sites, preparation is `O(nnz+p+n+e)` and auxiliary storage
+`O(q+p+n+e)`. After preparation, full mode costs `O(s*(v+q)+v+q+n²)`;
+summary mode costs `O(s*v+q+v+n)`. Full output needs two n×n matrices;
+summary output is linear in n. High occupancy retains full-tree passes.
 
-Both modes reuse the `comdist` connecting-tree builder and occupancy selector.
-Validation and pooling use the original tree first. Sparse observed tip sets
-are mapped together with the pooled row, retaining observed tips and their
-connecting nodes and summing original branches along contracted paths. High
-occupancy keeps full-tree passes. The two paths can differ in floating-point
-summation order; statistical definitions and NaN rules are unchanged.
+Recorded abundance-weighted public calls, 32 sites and three species/site,
+65,536-tip ultrametric trees, CSC input, summary mode:
 
-For n sites, s nonempty sites, p tips, e original nodes, q positive records and
-u distinct observed tips, CSC preparation, pooling and optional contraction
-cost `O(nnz+p+n+e)`. Dense preparation additionally scans `n*p` values. The
-working tree has k=e nodes on the full route and at most `2u-1` on the compressed
-route. After preparation, full mode costs `O(s*(k+q)+k+q+n^2)` and summary mode
-costs `O(s*k+q+k+n)`. Auxiliary storage remains `O(q+p+n+e)`; a prepared compressed
-tree with records and pooled row retains `O(q+n+k)`, and its distance workspace
-uses `O(k)`. Full output still requires two `O(n^2)` matrices; summary output
-is `O(n)`. Original-tree validation and pooling remain linear costs per call.
+| Shape | Time | Cumulative allocation |
+| --- | ---: | ---: |
+| Balanced | 1.14 ms | 3.215 MB |
+| Comb | 1.06 ms | 3.215 MB |
+| Star | 0.592 ms | 2.398 MB |
 
-Local Julia 1.12.7 measurements include public preparation and output, use one
-Julia/BLAS thread, and report the median of three runs after warm-up. The
-baseline is the implementation immediately before connecting-tree integration;
-r is species per site. All fixtures are ultrametric and use abundance weights:
-
-| Sites × tips; input and mode | Before | Current | Before allocation | Current allocation |
-| --- | ---: | ---: | ---: | ---: |
-| 32 × 8,192; balanced, CSC, r=3, summary | 6.10 ms | 0.255 ms | 1.259 MB | 0.448 MB |
-| 32 × 65,536; balanced, CSC, r=3, summary | 54.1 ms | 1.14 ms | 9.975 MB | 3.215 MB |
-| 32 × 65,536; comb, CSC, r=3, summary | 46.6 ms | 1.06 ms | 9.975 MB | 3.215 MB |
-| 32 × 65,536; star, CSC, r=3, summary | 16.0 ms | 0.592 ms | 5.782 MB | 2.398 MB |
-| 32 × 65,536; balanced, CSC, r=3, full | 58.8 ms | 1.14 ms | 9.992 MB | 3.232 MB |
-| 32 × 8,192; balanced, dense, r=8, summary | 5.98 ms | 0.809 ms | 1.269 MB | 0.491 MB |
-
-The 65,536-tip balanced fixture contracts from 131,071 nodes to 191 for 96
-observed tips. Private stage measurements reuse that preparation: diagonal
-and pooled evaluation take 57.7 ms on the original tree and 0.0803 ms on the
-compressed tree; compression takes 0.541 ms and original-abundance pooling
-0.302 ms. These stages exclude public validation/setup and are not a public
-reusable context; their separate medians must not be added as an exact call time.
-
-For 6,000 sites, 64 star-tree tips and r=3, current full/summary calls take
-579/3.39 ms and cumulatively allocate 578.02/2.025 MB. Their retained results
-are 576.048/0.0482 MB (`Base.summarysize`). MB is decimal; cumulative allocation
-and retained objects are not process peak memory. No peak was measured here.
-
-Gains depend on observed coverage and site count. High occupancy uses the
-original kernel with a small selection cost; summary mode also retains a
-linear preparation floor. Synthetic trees are constructed iteratively before
-timing; Newick parsing/conversion is excluded. Conversion now uses iterative
-postorder, verified by reading actual 65,536-tip combs through `read_tree` and
-the Newick/NEXUS stream entry points. Storage regressions cover 20,000-tip compressed
-calculations and 6,000-site summary output in both weighting modes.
+The balanced fixture contracts 131,071 nodes to 191. For 6,000 sites on a
+64-tip star, full/summary calls took 579/3.39 ms, allocated 578.02/2.025 MB,
+and retained 576.048/0.0482 MB. Tree construction and parsing are excluded.
 
 ## Analytical diversity moments
 
-`psv` and `psr`, including `compute_var=true`, use subtree pair moments and
-rerooted tip means. Centered means/SDs avoid subtracting large nearly equal
-moments; scaled covariance uses correlation deficits to retain tiny contrasts
-below long stems. Neither full VCV/correlation matrices nor site submatrices
-are constructed by PSV/PSR/PSE/PSC/PSD. For n sites, p tips, e nodes and q
-observed records, the full sequential route takes `O(nnz+p+n+e+n*e)` work,
-with `O(q+p+n+e)` auxiliary storage. Sparse sites now use connecting trees as
-described below. The full-pool variance is prepared once in `O(e+p)` work per
-call. Dense input also scans `n*p` values, and public calls prepare their
-inputs again. Permuted labels additionally sort per-site presence records
-for PSV/PSR/PSC; weighted PSE/PSD preparation needs no such sort.
+PSV/PSR/PSE/PSC/PSD compute directly from tree summaries, without full VCV,
+correlation matrices or per-site submatrices. Centered moments, correlation
+deficits and original path segments preserve small contrasts below long stems.
+Sparse preparation is linear in `nnz+p+n+e`; dense preparation scans n*p cells.
 
-`pse` accumulates weighted cross-subtree contrasts instead of subtracting a
-quadratic form from a weighted trace. Abundances are scaled before summation;
-if positive normalized weights underflow, a rare BigFloat tree pass preserves
-their contributions. `psc` propagates the two nearest distinct identities
-under `1-Cij` in two tree passes. Its raw-covariance path uses shared node
-heights, preserving the original definition even when the value is negative.
+Expected PD uses subtree sums and probabilities cached by descendant count.
+For m requested richness values, preparation is `O(p+e)`, evaluation `O(m*e)`
+and storage `O(p+e+m)`. The default full curve is `O(p*e)` work. Empty/all-p
+requests validate branches then return in `O(e+m)` work, without tree scratch.
+Logarithmic tails preserve representable variance terms after probability
+underflow. Exact and upper-bound modes have the same storage order.
 
-`psd` shares one label/record preparation, tree geometry, full-pool variance
-and reusable mean/mass workspace. It derives PSR and its variance from PSV,
-and reuses PSV for equal-abundance PSE. Output contains seven independent
-vectors in site order; it needs no site-pair matrix. Separate public calls
-still prepare their inputs independently.
+Recorded exact variance on 4,096-tip unit-branch trees; compare two available
+routes, full curve then select versus `richness=[10,50,100]`:
 
-`expected_pd` / `pd_variance` replace ancestor–descendant edge-pair enumeration
-with subtree sums. The full Bernoulli richness curve takes `O(p*e)` work and
-`O(p+e)` storage, replacing `O(p*e^2)` work. Supplying m richness values computes
-only those points: `O(p+e)` preparation, `O(m*e)` evaluation and `O(p+e+m)`
-storage. An empty request or requests containing only p validate the branches
-and return directly in `O(e+m)` work, without allocating tree workspaces.
-Exact variance and the covariance upper bound use the same storage order.
-Probabilities are cached by descendant
-count; logarithmic tail evaluation retains representable variance terms when
-absence probabilities underflow. The distinct sampling models and corrected
-PSV variance are described in the [community guide](community.md#psv-psr-and-analytical-pd-moments).
-
-For `richness=[10,50,100]` and exact variance, the previous subtree implementation's
-full-curve-then-select path compares as follows on 4,096-tip unit-branch trees.
-These measurements use Julia 1.12.7, one Julia/BLAS thread, and the median of
-three calls after warm-up; tree construction is excluded:
-
-| Shape | Full curve, then select | Requested points | Previous allocation | Requested allocation |
+| Shape | Full curve then select | Requested points | Full allocation | Requested allocation |
 | --- | ---: | ---: | ---: | ---: |
 | Balanced | 126.22 ms | 0.297 ms | 0.396 MB | 0.297 MB |
 | Comb | 344.25 ms | 0.412 ms | 0.686 MB | 0.587 MB |
 | Star | 58.02 ms | 0.105 ms | 0.280 MB | 0.182 MB |
 
-At 65,536 tips, the same three exact points take 4.24/7.91/1.70 ms on
-balanced/comb/star trees, cumulatively allocating 4.72/9.62/2.88 MB. Each result
-retains 224 bytes (`Base.summarysize`); tree preparation remains linear.
-The grid also covers one and 16 requested points and both variance modes.
-Allocation and retained size are separate quantities; neither measures process
-peak memory, which was not measured here. The default full curve retains its
-original complexity.
-
-Earlier comparisons below predate requested-point support. They use balanced
-unit-branch trees, Julia 1.12.7, one Julia/BLAS
-thread and the median of three calls after warm-up. PSV uses eight sites with
-three presences each, scaled covariance and variance enabled; expected PD
-uses the default upper bound. Tree construction is excluded:
-
-| Call | Tips | Previous | Current | Previous allocation | Current allocation |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `expected_pd` | 256 | 84.2 ms | 0.451 ms | 1.11 MB | 0.0258 MB |
-| `psv`, including variance | 512 | 399 ms | 0.151 ms | 559 MB | 0.0924 MB |
-
-The following earlier measurements use exact expected PD variance and
-the same PSV settings. Balanced, comb and star topologies are constructed
-iteratively outside timing; the benchmark also varies site richness from
-3 to 300 and disables PSV variance in separate cases.
-
-| Call | Shape | Tips | Sites | Time | Allocation |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `expected_pd`, exact | Balanced | 256 | — | 0.560 ms | 0.0259 MB |
-| `expected_pd`, exact | Balanced | 1,024 | — | 10.5 ms | 0.100 MB |
-| `expected_pd`, exact | Balanced | 4,096 | — | 140 ms | 0.396 MB |
-| `expected_pd`, exact | Comb | 4,096 | — | 390 ms | 0.686 MB |
-| `expected_pd`, exact | Star | 4,096 | — | 64.4 ms | 0.280 MB |
-| `psv`, including variance | Balanced | 1,000 | 8 | 0.197 ms | 0.178 MB |
-| `psv`, including variance | Balanced | 10,000 | 8 | 1.95 ms | 1.76 MB |
-| `psv`, including variance | Balanced | 100,000 | 8 | 39.7 ms | 17.6 MB |
-| `psv`, including variance | Comb | 100,000 | 8 | 37.0 ms | 17.6 MB |
-| `psv`, including variance | Star | 100,000 | 8 | 18.2 ms | 9.60 MB |
-
-For the 100,000-tip balanced tree, preparing scaled tree geometry alone takes
-2.80 ms / 6.40 MB. Repeating the internal single-site mean kernel with that
-geometry and allocated workspace takes 2.88 ms / zero allocated bytes. This
-kernel excludes label preparation and full-pool variance; it is not a public
-prepared-context interface. All allocations are cumulative, not peak memory;
-timings depend on tree shape, sites, occupancy and hardware. A full 100,000-tip
-Float64 VCV alone would require 80 GB. Separate numerical/storage regressions
-use exhaustive small-tree subsets, extreme branch scales and a 20,000-tip
-sparse PSV input. These PSV timings predate the connecting-tree route below.
+The full-curve column was recorded with the preceding full-curve implementation;
+default numerical outputs agree exactly. At 65,536 tips the three-point calls
+took 4.24/7.91/1.70 ms and allocated 4.72/9.62/2.88 MB for balanced/comb/star
+trees. Each three-point result retained 224 B. No large-tree full curve was timed.
 
 ### PSV/PSR connecting trees
 
-Standalone PSV now reuses the observed-tree plan and site index already used
-by PSD; PSR calls the same PSV path. A site selected for local extraction is
-evaluated on at most `2r-1` nodes for richness r. The original records determine richness even
-when singleton-only species are omitted from the working tree. Optional
-variance is still calculated once on the complete original tree, including
-unobserved tips. Dense calls keep their sequential kernel and reuse its
-full-pool variance scratch for site means. Neither path computes unused PSD metrics.
+Sparse site extraction uses a linear-space heavy-path/segment index. In a
+v-node working tree, an r-species site costs `O(r log r+r log² v)` to extract
+and `O(r)` to evaluate on at most `2r-1` nodes. Dense sites use `O(v+r)`
+sequential moments. Full-pool variance is computed once on the **complete
+original tree**, including unobserved species, adding `O(e+p)` work/storage.
 
-Aligned CSC preparation costs `O(nnz+p+n+e)`, including geometry and observed
-tree compression. Auxiliary storage stays `O(q+p+n+e)`. In a v-node working
-tree, site extraction costs `O(r log r+r log² v)` and mean evaluation `O(r)`;
-sites that do not qualify use `O(v+r)` sequential moments. The existing policy
-uses a site index at v≥256 and `2r-1<=v/32`; whole-collection compression also
-depends on observed occupancy. Full-pool variance adds `O(e+p)` work/storage
-once. Dense inputs scan `n*p` values; permuted labels also sort each site's
-presence records. No VCV, binary ancestor table or public context is added.
+Recorded public PSV on 100,000 unit-branch tips, 64 CSC sites, three species/site,
+correlation scaling enabled:
 
-These comparisons use the preceding full-tree PSV, Julia 1.12.7, one
-Julia/BLAS thread and warmed medians of three serial runs. Each tree has
-100,000 unit-branch tips; 64 CSC sites each contain three species. Scaled
-covariance is enabled. Public calls include validation, all preparation and
-result allocation; tree construction is excluded.
+| Shape | Time without variance | Time with variance | Allocation without/with variance |
+| --- | ---: | ---: | ---: |
+| Balanced | 5.61 ms | 18.75 ms | 8.19 / 18.59 MB |
+| Comb | 6.83 ms | 22.12 ms | 8.19 / 18.59 MB |
+| Star | 2.94 ms | 9.29 ms | 4.49 / 10.09 MB |
 
-| Shape | Variance | Full tree | Connecting trees | Previous allocated | Current allocated |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Balanced | Off | 156 ms | 5.61 ms | 12.01 MB | 8.19 MB |
-| Balanced | On | 170 ms | 18.75 ms | 17.61 MB | 18.59 MB |
-| Comb | Off | 190 ms | 6.83 ms | 12.01 MB | 8.19 MB |
-| Comb | On | 208 ms | 22.12 ms | 17.61 MB | 18.59 MB |
-| Star | Off | 80.6 ms | 2.94 ms | 6.41 MB | 4.49 MB |
-| Star | On | 85.5 ms | 9.29 ms | 9.61 MB | 10.09 MB |
-
-PSR on the balanced input changes from 158 to 5.69 ms without variance and
-171 to 18.79 ms with variance. Full-pool variance remains a material cost;
-its original workspace plus compression makes cumulative allocation slightly
-higher when enabled. Internal balanced-tree preparation without variance
-takes 5.76 ms / 8.13 MB and retains a 383-node plan plus records of 77.1 KB.
-With that plan prepared, all 64 means take 57.4 μs / 55.0 KB. Full-pool
-variance alone takes 15.0 ms / 10.40 MB with geometry already prepared.
-The prepared mean and variance timings exclude input validation; these
-internal stages are not an exposed reuse API.
-
-The grid also covers 1,000/10,000 tips, raw covariance and richness
-3/30/300/4,096. A 4,096-tip balanced tree with every species observed across
-2,048 two-species sites still benefits: variance-enabled PSV takes
-63.7→1.18 ms, allocating 0.952→3.07 MB. The global tree stays full, but each
-site has three nodes; its index adds linear storage. Dense/intermediate
-occupancy was rechecked with three alternating batches of 16 calls:
-4,096-tip fully occupied PSV without variance takes balanced
-0.792→0.767 ms, comb 0.745→0.776 ms and star 0.362→0.360 ms. Initial isolated
-timing outliers were not used to claim a dense speedup. Allocation rises by
-about 1.0–1.6 KB for strategy selection in these cases. All allocation figures
-are cumulative, not peak memory, and standalone calls still repeat preparation.
+Variance remains material even with small site trees. Connecting-tree preparation
+can increase allocation when variance is enabled. Standalone calls prepare again;
+private prepared kernels are not public reuse APIs.
 
 ### PSE, PSC and shared PSD
 
-PSE/PSC first contract the tree to observed tips and connecting nodes when
-occupancy is low. Contracted edges retain affine path factors and separate
-upward/downward offsets; computing `1-product(factors)` would lose tiny
-contrasts. Original heights preserve shared-root correlation and raw PSC,
-which may be negative. No VCV or site submatrix is constructed.
+PSE uses weighted cross-subtree contrasts; PSC propagates two distinct target
+identities. Contracted paths retain original heights and ordered affine
+transforms to preserve correlation and raw-covariance definitions. Rare
+underflowing abundance contributions use a BigFloat tree pass.
 
-On a sufficiently sparse site, a heavy-path index and ordered segment tree
-extract its own connecting tree, of at most `2r-1` nodes for richness r.
-The index uses `O(v)` storage for v working-tree nodes. Each site costs
-`O(r log r + r log^2 v)` to prepare and `O(r)` to evaluate. Other sites use
-`O(v+r)` sequential traversal. Global preparation is `O(e+q+n+p)` for tree
-nodes e, observed records q, sites n and tips p on CSC input; dense input
-also scans `n*p` values. Auxiliary storage is linear in these dimensions.
+PSD prepares one site tree for PSV/PSE/PSC, derives PSR from PSV and reuses
+PSV for equal-abundance PSE. Extraction/evaluation costs match the preceding
+section; optional variance still uses the original species pool.
 
-The global contraction policy is shared with community distances. Site
-extraction requires at least 256 working nodes and `2r-1 <= v/32`;
-denser collections keep original records and sequential traversal. PSD
-prepares each sparse site tree once for PSV/PSE/PSC, reuses moment buffers,
-and reuses PSV for equal-abundance PSE. Its optional variance is calculated
-once on the **complete original species pool**, adding linear tree work and
-storage. Dense PSD also reuses its variance scratch for site moments.
+For the same 100,000-tip/64-site setup, abundances `[1,2,3]`, correlation scaling:
 
-The comparisons below use the previous sparse full-tree implementation,
-Julia 1.12.7 / i5-12400, one Julia/BLAS thread and the warmed median of three.
-Trees have 100,000 tips with unit branches, 64 sites and three observations
-per site, distributed through the tip order with abundances `[1,2,3]`.
-Correlation scaling is enabled; PSD includes variance. Public-call timings
-include validation, preparation and output:
+| Shape | PSE time / allocation | PSC time / allocation | PSD with variance time / allocation |
+| --- | ---: | ---: | ---: |
+| Balanced | 5.69 ms / 8.20 MB | 5.99 ms / 8.20 MB | 20.2 ms / 18.63 MB |
+| Comb | 6.62 ms / 8.21 MB | 6.44 ms / 8.20 MB | 22.0 ms / 18.64 MB |
+| Star | 2.78 ms / 4.50 MB | 3.51 ms / 4.50 MB | 9.71 ms / 10.13 MB |
 
-| Call | Shape | Full-tree baseline | Current | Baseline allocation | Current allocation |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `pse` | Balanced | 150 ms | 5.69 ms | 10.42 MB | 8.20 MB |
-| `pse` | Comb | 164 ms | 6.62 ms | 10.42 MB | 8.21 MB |
-| `pse` | Star | 64.7 ms | 2.78 ms | 5.62 MB | 4.50 MB |
-| `psc` | Balanced | 101 ms | 5.99 ms | 12.01 MB | 8.20 MB |
-| `psc` | Comb | 101 ms | 6.44 ms | 12.01 MB | 8.20 MB |
-| `psc` | Star | 46.8 ms | 3.51 ms | 6.41 MB | 4.50 MB |
-| `psd` | Balanced | 457 ms | 20.2 ms | 22.43 MB | 18.63 MB |
-| `psd` | Comb | 482 ms | 22.0 ms | 22.43 MB | 18.64 MB |
-| `psd` | Star | 195 ms | 9.71 ms | 12.03 MB | 10.13 MB |
-
-Without variance, balanced-tree PSD changes from 440 to 6.31 ms and from
-16.83 to 8.23 MB. Keeping variance therefore has a measurable cost despite
-the small site trees. Separate cases cover 1,000/10,000 tips, eight sites,
-raw covariance and richness 30/300/4,096. Fully occupied 4,096-tip dense
-inputs retain the sequential path. An interleaved check using three batches
-of 16 public calls separates small timing differences from run-order effects.
-Automatic selection does not guarantee a speedup for every input.
-
-Measured separately on the balanced 100,000-tip input, internal preparation
-takes 5.61 ms / 8.15 MB and retains 82.4 KB for records, a 383-node working
-tree and its index. Each three-tip site then needs at most five nodes.
-Evaluating all 64 sites with that internal plan takes 56.9 μs / 53.9 KB for
-PSE or 60.4 μs / 63.2 KB for PSC. These internal measurements exclude
-preparation; public calls above include it. Extremely small abundance
-weights use the existing BigFloat path, including subnormal weights whose
-intermediate pair products would otherwise lose precision. All allocations
-are cumulative, not peak memory. Numerical/storage checks include deep
-20,000-tip combs and a fully observed pool with individually sparse sites.
+Balanced PSD without variance took 6.31 ms / 8.23 MB. Dense collections keep
+sequential traversal, so sparse-tree gains should not be extrapolated to full occupancy.
 
 ## PD variants and bootstrap
 
-`pd_calc` uses sparse presence records and descendant counts, eliminating dense
-community/site-by-edge intermediates and edge-by-observed-tip enumeration.
-Sparse sites reuse the private linear-space heavy-path/segment index and a
-connecting tree with at most `2r-1` nodes. Common root stems are included for
-rooted variants; MST excludes them and TIP uses original terminal edges.
-Original path segments are summed without root-height subtraction. Denser
-sites reuse sequential counts on the full tree. No VCV is constructed.
+`pd_calc` uses sparse records and descendant counts. Sparse r-tip sites reuse
+a linear-space path/site index in `O(r log r+r log² e)` work; dense sites use
+`O(e+r)`. TIP directly sums r terminal edges. Preparation is
+`O(nnz+p+n+e)` on aligned CSC input; public calls prepare their own index.
 
-For e nodes, p tips and q presence records, tree-aligned CSC preparation takes
-`O(nnz+p+n+e)` work/storage bounded by `O(q+p+n+e)`. A sparse r-tip evaluation
-takes `O(r log r+r log² e)` work, including its connection paths; a dense one
-takes `O(e+r)`, while TIP sums r terminal edges directly. The path index is
-created only when first needed and reused across sites and bootstrap draws.
-Permuted labels additionally sort each site's presence records; dense input
-also scans `n*p` values.
+Bootstrap scans all p tip probabilities per nonempty draw. A bounded heap keeps
+the best r keys or worst p−r keys and their complement, using
+`O(min(r,p-r))` heap storage plus selected tips/optional bit markers.
+Sampling takes `O(p*(1+log(max(1,min(r,p-r)))))` plus sorting selected keys
+on the best-key route. No dense null community is formed; returned replicates
+still need `O(n*reps)` storage. RNG consumption and stable tie rules are retained.
 
-Bootstrap still visits every tree-tip probability per nonempty draw to preserve
-the original exponential keys and RNG stream. It keeps only the best r keys,
-or the worst `p-r` keys and their complement: heap storage is
-`O(min(r,p-r))`, with an r-tip selection vector and an optional p-bit complement
-marker. Sampling costs `O(p*(1+log(max(1,min(r,p-r)))))`, plus sorting the selected
-r tips on the best-key route. The required sites-by-reps output remains
-`O(n*reps)`. No dense randomized community is created. The weighted sampling
-law matches R; cross-language seeds do not denote identical streams.
+Recorded 10,000-tip balanced tree, 16 sites with three species each,
+11 bootstrap draws and uniform weights; tree-only calls use one site:
 
-The same serial, warmed, single-thread setup compares the preceding Julia
-implementation and this route. The following uses a 10,000-tip balanced tree,
-16 sites with three species each; tree-only calls have one site. Bootstrap
-uses 11 draws and uniform weights. Public-call timings include validation,
-input preparation, tree preparation and outputs.
+| Call | Time | Cumulative allocation |
+| --- | ---: | ---: |
+| `pd_calc`, TBL | 0.967 ms | 2.48 MB |
+| Community `pd_bootstrap` | 13.0 ms | 2.96 MB |
+| Tree `pd_bootstrap` | 2.22 ms | 2.57 MB |
 
-| Call | Previous | Current | Previous allocated | Current allocated |
-| --- | ---: | ---: | ---: | ---: |
-| `pd_calc`, TBL | 5.00 ms | 0.967 ms | 7.17 MB | 2.48 MB |
-| Community `pd_bootstrap` | 99.3 ms | 13.0 ms | 76.18 MB | 2.96 MB |
-| Tree `pd_bootstrap` | 19.6 ms | 2.22 ms | 28.90 MB | 2.57 MB |
+## Null models
 
-Comb and star trees show the same direction. Dense 1,024-tip, four-site input
-with richness 1,000 retains sequential counts: TBL takes 0.0667 ms versus
-7.35 ms previously. For 100,000 tips and 64 three-species sites, public TBL
-calls take 15.0/10.6/5.63 ms and allocate 21.50/22.40/12.09 MB for
-balanced/comb/star trees. This includes preparing a new index per public call.
-On the balanced tree, internal first-site workspace preparation alone takes
-11.1 ms / 20.59 MB, retaining 19.78 MB; a subsequent three-tip evaluation takes
-21.7 μs / 1,696 bytes including its small input vector, excluding public input
-validation. These are cumulative allocations and retained object sizes, not
-peak memory. Standalone calls do not retain a public PD context.
-
-Subset sums are checked against original-edge enumeration and local caper
-source. Sampling tests compare selected subsets and the next RNG value with
-stable full sorting, including ties, zero weights and complement/full draws;
-an independently enumerated weighted sampling law is checked in both Julia
-and R. The sparse storage regression uses a 20,000-tip comb and 12 sites.
+Site SES and beta SES retain one null community and reusable species/tree
+workspaces, accumulating means and sample SDs online. Specifying beta `pairs`
+reduces endpoint branch sets and output, but each draw still randomizes the
+complete community to retain the null model's margins and species pool.
+Swap effort and runs remain genuine computation costs; storage sparsity does
+not make randomization constant-time. See [model definitions](null_models.md).
 
 ## Tree distance precision
 
-Weighted tree distances use root-depth differences only when relative loss is
-bounded. Otherwise they sum original branch segments through weighted ancestor
-jumps, built on demand and reused within matrix/vector calls. Path queries
-remain `O(log e)` after indexing, including on deep combs. The ancestor index
-and optional weighted jumps use `O(e log e)` storage; full pairwise output
-still requires quadratic space in the number of requested tips.
+Weighted distances use root-depth subtraction when relative loss is bounded;
+otherwise original branch segments are summed through on-demand weighted
+ancestor jumps. Queries take `O(log e)` after indexing; the ancestor/weighted
+jump index needs `O(e log e)` storage. This index is separate from the linear
+working state used by community kernels. Full tip-pair output remains quadratic
+in the number of requested tips.
 
 ## Multiple-site taxonomic beta
 
-`beta_multi` derives pairwise shared counts from species occupancy `q` as
-`sum(q*(q-1)/2)`. Sorting selected-site richness supplies the sums of pairwise
-minima and maxima; subtracting shared counts gives the required unique-count
-sums. Counts and cancellation use `Int128`, with conversion to `Float64` at
-the final ratios. Neither pair enumeration nor a site-pair matrix is needed.
-
-For n input sites, p species and m selected sites, CSC work is
-`O(nnz + p + n + m log m)` and auxiliary storage is `O(n+p)`; the full input is
-validated even for a subset. Dense input takes `O(n*p + m log m)` work.
-The storage regression checks a 6,000 × 40,000 CSC collection against an
-8 MB cumulative-allocation bound after compilation. This is a regression bound,
-not peak-memory or runtime benchmark evidence. No new timing benchmark was run.
+`beta_multi` derives shared-count sums from species occupancy, then sorts site
+richness for the sums of pairwise minima/maxima. Int128 counts postpone floating
+conversion until the ratios. No site-pair matrix is created.
+For m selected sites, CSC work is `O(nnz+p+n+m log m)`, auxiliary storage
+`O(n+p)`; dense work is `O(n*p+m log m)`. Excluded rows remain validated.
 
 ## Multiple-site phylogenetic beta
 
-`phylobeta_multi` reuses sorted branch sets and orders selected sites by rooted
-PD. For an edge occupied at q sites, let R be the sum of zero-based site ranks
-where the edge occurs. Its coefficients in maximum/minimum unique-length sums
-are `R-q*(q-1)/2` and `q*(m-1)-R-q*(q-1)/2`. These nonnegative `Int128`
-coefficients remove shared branches before multiplying by branch length,
-preserving small terminal lengths attached to long stems. Adjacent PD gaps
-supply the difference between the two unique-length sums, and nestedness uses
-the defining product. Close PDs, overflowing intermediate sums or extreme
-scales use a 2304-bit arithmetic fallback; outputs remain `Float64`.
+`phylobeta_multi` reuses branch sets and sorted rooted PD. Nonnegative Int128
+occupancy/rank coefficients remove shared branches before multiplying lengths.
+Close PDs or extreme scales can use a 2304-bit fallback; outputs remain Float64.
+For b selected site-branch memberships and m sites, work after branch collection
+is `O(b+e+m log m)`, auxiliary storage `O(e+m)`.
+`CommunityContext` reuses branch sets. Full input validation still precedes
+direct calls; neither route builds dense site-by-branch or site-pair matrices.
+The multiple-site storage checks provide allocation bounds, not timing or RSS evidence.
 
-After branch collection, m selected sites, e tree edges and b site-branch
-memberships require `O(b + e + m log m)` work and `O(e+m)` auxiliary storage.
-Matrix input first validates all rows and collects presence/branches;
-`CommunityContext` reuses its branch sets and tree snapshot. Neither path
-builds dense community, site-by-branch or site-pair matrices. The storage
-regression checks a 6,000 × 4,000 CSC collection with 18,000 stored presences,
-against 20 MB cumulative allocations for a direct call and 5 MB for a prepared
-call after compilation. These are regression bounds, not measured peak memory
-or timing comparisons.
+## Regionalization and ordination
+
+The six monotone linkage methods use `O(n²)` nearest-neighbor chaining.
+Centroid/median cache row minima with `O(n³)` worst-case time. Clustering
+uses a packed Float64 triangle of `n*(n-1)/2` entries; complete inputs and
+regional outputs remain quadratic. `PhyloregionContext` retains one triangle
+and uses a second temporarily during preparation. Cutting the hierarchy alone
+costs `O(n)`; regional summaries still visit site pairs. Linkage evaluation
+avoids a full cophenetic matrix. All-cut dispersion scoring visits each pair
+once with `O(n)` additional storage.
+
+GoM's CSC working storage is `O(nnz+(n+p)*k)` for k regions, without a dense
+community or an nnz × k responsibility array. Indicator scoring uses a species
+vector per target region, not a species × regions × regions tensor.
+
+NMDS retains quadratic pair storage, without pair-by-iteration histories.
+Default PCoA initialization adds cubic work; `init=:random` avoids that
+initialization, while iterations and multiple starts still cost work. Changing
+initialization changes the optimization path; inspect stress and convergence.
+
+## Metric value classification
+
+Exact Jenks classification uses multiplicity-weighted dynamic programming over
+m distinct sorted values: `O(k*m²)` time and `O(k*m)` workspace for k classes.
+`max_work=50_000_000` bounds this workload explicitly. Centering/scaling and
+Welford interval variance avoid raw squared-sum cancellation. Equal-width and
+quantile methods are alternatives with different statistical definitions;
+see [classification rules](conservation.md#metric-value-classes).

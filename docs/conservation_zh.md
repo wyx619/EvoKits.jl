@@ -1,6 +1,8 @@
 # 保护指标
 
-[首页](../README_zh.md) · [English](conservation.md)
+[文档目录](README_zh.md) · [首页](../README_zh.md) · [English](conservation.md)
+
+本页：[EDGE](#edge) · [EDGE2](#edge2) · [热点/冷点](#热点与冷点) · [数值分级](#指标数值分级)
 
 EDGE/EDGE2 得分、灭绝概率、指标热点/冷点筛选与数值分级。
 
@@ -92,4 +94,4 @@ classes.actual_k
 
 `ValueClassificationResult` 还保留标签、原值、请求类别数、方法和原因。类别包含其上界，相同值始终同类；`breaks` 为最小值加全部上界，最小值单独成类时前两个断点相同。Jenks 类别数不超过不同值数量；等距/分位数方法先以有效观测数限制区间数，再去除重复上界。`actual_k` 统计上界数，等距/分位数区间可能为空；少于请求 k 时为 `:reduced_classes`，常量仅一类。空输入或全部无效时报错；`invalid=:skip` 在 missing/NaN 原位置保留 missing 类别，Inf 报错。
 
-Jenks 在 m 个不同排序值上使用保留重复次数权重的精确动态规划，最小化类内平方和，耗时 O(k m²)、工作空间 O(k m)。默认 `max_work=50_000_000` 限制精确计算量，超出时报错。平移缩放和 Welford 区间方差避免原始平方和相消；原单位 SSE 可能溢出或下溢，`normalized_objective` 和 `objective_scale` 保留缩放结果。同代价时递归优先较晚的最后切分，可能与 R 断点不同而最优 SSE 相同。零值、负数、小数均保留；地图几何、颜色和绘图独立处理。
+Jenks 最小化类内平方和，保留重复次数权重。默认 `max_work=50_000_000` 限制精确计算量，超出时报错。原单位 SSE 可能溢出或下溢，`normalized_objective` 和 `objective_scale` 保留缩放结果。同代价时递归优先较晚的最后切分，可能与 R 断点不同而最优 SSE 相同。零值、负数、小数均保留；地图几何、颜色和绘图独立处理。成本见[性能说明](performance_zh.md#指标数值分级)。
