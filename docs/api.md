@@ -119,6 +119,11 @@ finite sum. Abundance weighting defaults to true. Setting it false changes
 within-site compositions to incidence; pooling and site weights retain original
 abundances. Empty sites propagate NaN to alpha/beta/Fst while pooled total may
 remain valid. Dkk, Dkl and H own independent arrays in input site order.
+The default `pairwise=true` returns both site-pair matrices. With `pairwise=false`,
+`Dkl` and `H` are independent `0×0` matrices; `Dkk` and all four scalars retain
+the same definitions, weighting and NaN rules, and no site pairs are evaluated.
+Both modes automatically choose full or compressed tree traversal from observed
+tip coverage, after original-tree validation and abundance pooling.
 See [Rao partition rules and example](community.md#rao-diversity-partition).
 
 ### Community Result Types

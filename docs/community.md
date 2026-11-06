@@ -266,7 +266,20 @@ rao.Dkk           # [4/9, 3/4]
 rao.total         # 8/7
 rao.Fst           # 11/24
 raoD(rao_data, tree; abundance_weighted=false)
+rao_summary = raoD(rao_data, tree; pairwise=false)
+rao_summary.Fst    # 11/24
+size(rao_summary.Dkl), size(rao_summary.H) # ((0, 0), (0, 0))
 ```
+
+The default `pairwise=true` returns both site-pair matrices. When only within-site
+diversities and the pooled partition are needed, `pairwise=false` skips site-pair
+calculations. It returns the same `RaoDResult` with independent `0×0` `Dkl` and
+`H` matrices; `Dkk`, `total`, `alpha`, `beta` and `Fst` retain their definitions.
+
+Both modes automatically use a smaller connecting tree when few tree species
+are observed across the sites. Original-tree validation and abundance pooling
+precede compression; distances use sums of original branches. Inputs covering
+much of the tree keep the full-tree path. No additional option is needed.
 
 Abundance weights are the default. With `abundance_weighted=false`, species
 within each site have equal weight, while pooled composition and site weights

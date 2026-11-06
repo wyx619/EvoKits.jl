@@ -175,7 +175,14 @@ rao.Dkk           # [4/9, 3/4]
 rao.total         # 8/7
 rao.Fst           # 11/24
 raoD(rao_data, tree; abundance_weighted=false)
+rao_summary = raoD(rao_data, tree; pairwise=false)
+rao_summary.Fst    # 11/24
+size(rao_summary.Dkl), size(rao_summary.H) # ((0, 0), (0, 0))
 ```
+
+默认 `pairwise=true` 返回两份群落对矩阵。只需要群落内多样性和合并分解时，设置 `pairwise=false` 跳过群落对计算，仍返回 `RaoDResult`，其中 `Dkl`、`H` 为各自独立的 `0×0` 矩阵，`Dkk`、`total`、`alpha`、`beta`、`Fst` 沿用原定义。
+
+两种模式都会在各群落合计观测物种较少时自动使用更小的连接树。先在原树上校验并按原丰度合并，再通过累加原始枝长压缩路径；覆盖树中大部分物种时保留整树路径，无需增加参数。
 
 默认按丰度加权。`abundance_weighted=false` 只将各群落内部的存在物种改为等权；合并群落的组成和群落间权重仍使用原丰度，因此 beta/Fst 可能为负。这是现有 Julia 选项，Picante 没有对应参数。
 

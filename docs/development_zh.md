@@ -30,8 +30,10 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 `nmds_alignment.jl` 按共同标签计算正交 Procrustes 变换；`nmds_colors.jl` 将坐标映射到 phyloregion 固定色板，并保存可复用范围。两者均使用现有依赖，在独立坐标副本上操作。
 
 `rao.jl` 定义 Rao 熵及其分解，复用 `community_distances.jl` 准备的稀疏记录与分支距离工作区；两者均先于 `data_metrics.jl` 的 `CommunityData` 适配加载。
+`pairwise=false` 路径仅计算对角线及合并群落，复用同一工作区和结果类型，群落对矩阵留空。
+`_rao_prepare` 先按原丰度合并，再将群落及合并行共同映射到既有连接树；`_rao_result` 在所选拓扑上共用两种输出模式，公共参数和结果类型不变。
 
-[comdist_virtual.jl](../src/community/diversity/comdist_virtual.jl) 为 `comdist` 选择整树/压缩树路径并调度指定群落对，一次后序遍历压缩未观测及单分叉路径、累加原始枝长，随后复用共用的两遍距离内核。[comdistnt_virtual.jl](../src/community/diversity/comdistnt_virtual.jl) 复用该连接树，按目标组织双向请求，重复/反向对去重后再合并方向均值。Rao 内部路径继续使用整树遍历。
+[comdist_virtual.jl](../src/community/diversity/comdist_virtual.jl) 为 `comdist` 选择整树/压缩树路径并调度指定群落对，一次后序遍历压缩未观测及单分叉路径、累加原始枝长，随后复用共用的两遍距离内核。[comdistnt_virtual.jl](../src/community/diversity/comdistnt_virtual.jl) 复用该连接树，按目标组织双向请求，重复/反向对去重后再合并方向均值。Rao 复用同一覆盖率选择器及连接树构造器，高覆盖率时保留整树遍历，全部输入先在原树校验。
 
 [distance_context.jl](../src/community/core/distance_context.jl) 在 `CommunityDistanceContext` 中拥有丰度/存在记录、最小距离拓扑及两种工作区，固定对准备仅保留有效端点并缓存双向调度；锁保护共享工作区，结果数组始终独立。原 `CommunityContext` 继续保留存在型分支汇总，不增加距离存储。
 

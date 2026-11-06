@@ -52,14 +52,20 @@ reusable bounds. Both use existing dependencies and operate on copied scores.
 `rao.jl` defines Rao entropy and its partition, reusing the prepared sparse
 rows and branch-distance workspace from `community_distances.jl`. Both load
 before `data_metrics.jl` adds the `CommunityData` adapters.
+Its `pairwise=false` path evaluates only the diagonal and pooled community,
+using the same workspace and result type with empty site-pair matrices.
+`_rao_prepare` pools original abundances before mapping sites and the pooled
+row through the shared connecting-tree builder; `_rao_result` reuses either
+topology for both output modes. Public keywords and result types are unchanged.
 
 [comdist_virtual.jl](../src/community/diversity/comdist_virtual.jl) selects full or compressed tree traversal for `comdist`
 and schedules requested site pairs. It contracts unobserved/unary paths in
 one postorder pass, summing original edge lengths, and reuses the shared
 two-pass distance kernel. [comdistnt_virtual.jl](../src/community/diversity/comdistnt_virtual.jl)
 reuses that connecting tree and groups both directional queries by target,
-deduplicating repeated/reversed requests before combining the means. Rao's
-internal path retains its full-tree traversal.
+deduplicating repeated/reversed requests before combining the means. Rao
+reuses the occupancy selector and connecting-tree builder, with full-tree
+passes retained for high occupancy. Original-tree validation precedes mapping.
 
 [distance_context.jl](../src/community/core/distance_context.jl) owns the
 abundance/presence records, minimal distance topology and both workspaces in

@@ -388,31 +388,62 @@ be counted when evaluating one or a few calls.
 
 ## Rao diversity partition
 
-`raoD` reuses the sparse row preparation and tree workspace of `comdist` for
-`Dkl`, takes its diagonal for `Dkk`, and evaluates the pooled community once
-with the same two-pass kernel. Original abundances are scaled before pooling, so
-finite values can be used even when their raw sum would overflow. No dense
-community, full tip-distance or tip-pair weight matrix is constructed.
+`raoD` reuses sparse records and one two-pass tree-distance workspace. The
+default `pairwise=true` returns `Dkl`, its diagonal `Dkk`, and `H`.
+`pairwise=false` evaluates only within-site distances and the pooled community,
+returning independent `0×0` `Dkl` and `H` in the same result type. Both modes
+scale original abundances before pooling, preserving site and pooled weights.
+Neither constructs dense community, full tip-distance or tip-pair weight matrices.
 
-For n sites, s nonempty sites, p tips, e tree nodes and q observed records,
-CSC preparation takes `O(nnz+p+n+e)` work, followed by
-`O(s*(e+q)+e+q+n^2)`. Auxiliary storage is `O(q+p+n+e)`; the public `Dkl`
-and `H` still require two `O(n^2)` matrices. Dense preparation scans `n*p`
-values. Each target and the pooled community traverse the full tree.
+Both modes reuse the `comdist` connecting-tree builder and occupancy selector.
+Validation and pooling use the original tree first. Sparse observed tip sets
+are mapped together with the pooled row, retaining observed tips and their
+connecting nodes and summing original branches along contracted paths. High
+occupancy keeps full-tree passes. The two paths can differ in floating-point
+summation order; statistical definitions and NaN rules are unchanged.
 
-Local comparisons with the previous Julia RaoD implementation used balanced
-unit-branch ultrametric trees, eight observed species per site, one Julia/BLAS
-thread and the median of three measurements after warm-up:
+For n sites, s nonempty sites, p tips, e original nodes, q positive records and
+u distinct observed tips, CSC preparation, pooling and optional contraction
+cost `O(nnz+p+n+e)`. Dense preparation additionally scans `n*p` values. The
+working tree has k=e nodes on the full route and at most `2u-1` on the compressed
+route. After preparation, full mode costs `O(s*(k+q)+k+q+n^2)` and summary mode
+costs `O(s*k+q+k+n)`. Auxiliary storage remains `O(q+p+n+e)`; a prepared compressed
+tree with records and pooled row retains `O(q+n+k)`, and its distance workspace
+uses `O(k)`. Full output still requires two `O(n^2)` matrices; summary output
+is `O(n)`. Original-tree validation and pooling remain linear costs per call.
 
-| Weighted `raoD` | Previous | Current | Previous allocation | Current allocation |
+Local Julia 1.12.7 measurements include public preparation and output, use one
+Julia/BLAS thread, and report the median of three runs after warm-up. The
+baseline is the implementation immediately before connecting-tree integration;
+r is species per site. All fixtures are ultrametric and use abundance weights:
+
+| Sites × tips; input and mode | Before | Current | Before allocation | Current allocation |
 | --- | ---: | ---: | ---: | ---: |
-| 12 sites × 256 tips | 50.6 ms | 0.107 ms | 166 MB | 0.0512 MB |
-| 8 sites × 1,024 tips | 958 ms | 0.231 ms | 1,235 MB | 0.164 MB |
+| 32 × 8,192; balanced, CSC, r=3, summary | 6.10 ms | 0.255 ms | 1.259 MB | 0.448 MB |
+| 32 × 65,536; balanced, CSC, r=3, summary | 54.1 ms | 1.14 ms | 9.975 MB | 3.215 MB |
+| 32 × 65,536; comb, CSC, r=3, summary | 46.6 ms | 1.06 ms | 9.975 MB | 3.215 MB |
+| 32 × 65,536; star, CSC, r=3, summary | 16.0 ms | 0.592 ms | 5.782 MB | 2.398 MB |
+| 32 × 65,536; balanced, CSC, r=3, full | 58.8 ms | 1.14 ms | 9.992 MB | 3.232 MB |
+| 32 × 8,192; balanced, dense, r=8, summary | 5.98 ms | 0.809 ms | 1.269 MB | 0.491 MB |
 
-These synthetic examples measure cumulative allocations, not peak memory;
-results depend on tree shape, site count and occupancy. A separate storage
-regression checks 12 sites, 20,000 tips and 36 stored values against a 15 MB
-allocation bound after compilation in both weighting modes.
+The 65,536-tip balanced fixture contracts from 131,071 nodes to 191 for 96
+observed tips. Private stage measurements reuse that preparation: diagonal
+and pooled evaluation take 57.7 ms on the original tree and 0.0803 ms on the
+compressed tree; compression takes 0.541 ms and original-abundance pooling
+0.302 ms. These stages exclude public validation/setup and are not a public
+reusable context; their separate medians must not be added as an exact call time.
+
+For 6,000 sites, 64 star-tree tips and r=3, current full/summary calls take
+579/3.39 ms and cumulatively allocate 578.02/2.025 MB. Their retained results
+are 576.048/0.0482 MB (`Base.summarysize`). MB is decimal; cumulative allocation
+and retained objects are not process peak memory. No peak was measured here.
+
+Gains depend on observed coverage and site count. High occupancy uses the
+original kernel with a small selection cost; summary mode also retains a
+linear preparation floor. Synthetic trees are constructed iteratively before
+timing; Newick parsing/conversion is excluded. The existing recursive conversion
+can overflow on very deep combs. Storage regressions cover 20,000-tip compressed
+calculations and 6,000-site summary output in both weighting modes.
 
 ## Analytical diversity moments
 

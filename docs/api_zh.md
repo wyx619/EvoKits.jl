@@ -73,6 +73,9 @@ Newick/NEXUS 格式逐文件识别。NEXUS 的树号只统计 `TREE`/`UTREE` 定
 
 `raoD` 返回包含 `Dkk`、`Dkl`、`H`、`total`、`alpha`、`beta` 和 `Fst` 的 `RaoDResult`，使用 `patristic / 2`。树须为超度量树（根到 tip 的绝对容差 1e-8），枝长有限、非负且总和有限。丰度加权默认为 true；关闭时仅将群落内组成改为存在物种等权，合并群落及群落间权重仍按原丰度计算。空群落使 alpha/beta/Fst 为 `NaN`，但合并 total 仍可有效。Dkk、Dkl 和 H 各自拥有独立数组，按输入群落顺序排列，详见 [Rao 分解规则与示例](community_zh.md#rao-多样性分解)。
 
+默认 `pairwise=true` 返回两份群落对矩阵。`pairwise=false` 跳过群落对计算，`Dkl`、`H` 为独立的 `0×0` 矩阵；`Dkk` 和四个标量保留相同定义、权重及 NaN 规则。
+两种模式均在原树校验、原丰度合并后，按观测物种覆盖率自动选择整树或压缩树遍历。
+
 ### 群落结果类型
 
 - `pd` 返回 `PDResult`，包含 `sample_labels`、`pd`、`richness` 和 `include_root`。
