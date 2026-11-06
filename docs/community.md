@@ -219,6 +219,9 @@ richness_metric = psr(moment_data, tree)
 moments = expected_pd(tree; upper_bound=false)
 moments.expected_pd  # [1.875, 3.5, 4.875, 6.0]
 moments.variance_pd  # [2.3671875, 2.375, 1.2421875, 0.0]
+selected = expected_pd(tree; richness=[3, 1, 4], upper_bound=false)
+selected.richness     # [3, 1, 4]
+selected.expected_pd  # [4.875, 1.875, 6.0]
 diversity = psd(moment_data, tree)
 diversity.pse         # [1/2, 5/6]: equal abundances give PSE = PSV
 diversity.psc         # [1/2, 1/2]
@@ -248,8 +251,15 @@ are preserved. Algorithm and allocation details are in the [performance guide](p
 occurs **independently**, with probability `richness/tree.ntips`. Thus richness
 is the expected number present. `upper_bound=false` gives the exact Bernoulli
 variance; the default true gives picante's covariance upper bound. These are
-not fixed-size rarefaction moments. Branch lengths must be finite/nonnegative
-with a finite sum. See [algorithm and scaling](performance.md#analytical-diversity-moments).
+not fixed-size rarefaction moments.
+
+Omitting `richness` returns the full curve `1:tree.ntips`. Supply an integer
+or a vector/range of integers in that interval to compute only the requested
+points; their order and duplicates are retained. A scalar returns one-element
+arrays; an empty vector returns empty arrays. Bool, noninteger types and
+out-of-range values are rejected. Results own their arrays. Branch lengths
+must be finite/nonnegative with a finite sum, including for an empty request.
+See [algorithm and scaling](performance.md#analytical-diversity-moments).
 
 ### Rao diversity partition
 

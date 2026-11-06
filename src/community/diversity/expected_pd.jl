@@ -24,9 +24,35 @@ ead(tree::CompactTree) = edge_abundance_distribution(tree)
     return exp(log(length) + log(below) + log_absent + log(factor))
 end
 
-function _expected_pd_vectors(tree::CompactTree; upper_bound::Bool = true)
+function _expected_pd_richness(richness, n::Int)
+    richness === nothing && return collect(1:n)
+    values = if richness isa Integer
+        (richness,)
+    elseif richness isa AbstractVector
+        richness
+    else
+        throw(ArgumentError("richness must be an integer or a vector/range of integers"))
+    end
+    selected = Vector{Int}(undef, length(values))
+    for (i, value) in enumerate(values)
+        (value isa Integer && !(value isa Bool)) ||
+            throw(ArgumentError("richness values must be integers, excluding Bool"))
+        1 <= value <= n || throw(ArgumentError("richness values must lie in 1:$n"))
+        selected[i] = Int(value)
+    end
+    return selected
+end
+
+function _expected_pd_vectors(tree::CompactTree, richness::Vector{Int}; upper_bound::Bool = true)
     _validate_community_branch_lengths(tree)
     n = tree.ntips
+    expected, variance = zeros(length(richness)), zeros(length(richness))
+    isempty(richness) && return expected, variance
+    total_length = sum(tree.edge_length)
+    if all(==(n), richness)
+        fill!(expected, total_length)
+        return expected, variance
+    end
     descendants = _tools_descendant_tip_counts(tree)
     lengths = zeros(tree.nnodes)
     for edge in 1:tree.nedges
@@ -44,9 +70,12 @@ function _expected_pd_vectors(tree::CompactTree; upper_bound::Bool = true)
     # LCA index is needed; all preparation and working arrays are linear.
     classes = unique(Int[descendants[node] for node in tree.child_of_edge])
     absent, present = zeros(n), zeros(n)
-    expected, variance = zeros(n), zeros(n)
-    for richness in 1:(n - 1)
-        log_absence = log1p(-richness / n)
+    for (i, count_tips) in enumerate(richness)
+        if count_tips == n
+            expected[i] = total_length
+            continue
+        end
+        log_absence = log1p(-count_tips / n)
         for count in classes
             exponent = count * log_absence
             absent[count], present[count] = exp(exponent), -expm1(exponent)
@@ -67,33 +96,39 @@ function _expected_pd_vectors(tree::CompactTree; upper_bound::Bool = true)
             var += _expected_pd_variance_term(length, a, below, exponent, 2.0)
             upper_bound || (subtree[parent] += subtree[node] + contribution)
         end
-        expected[richness], variance[richness] = mean, var
+        expected[i], variance[i] = mean, var
     end
-    expected[n] = sum(tree.edge_length)
     return expected, variance
 end
 
 """
-    expected_pd(tree; upper_bound=true)
-    pd_variance(tree; upper_bound=true)
+    expected_pd(tree; richness=nothing, upper_bound=true)
+    pd_variance(tree; richness=nothing, upper_bound=true)
 
 Expected rooted PD and its variance when each tip independently occurs with
-probability richness/ntips, for richness=1:ntips. Richness is the expected
-number of tips, not a fixed-size sample without replacement.
+probability richness/ntips. By default, return the full curve for richness
+1:ntips. Supply an integer or a vector/range of integers in 1:ntips to compute
+only those points, preserving request order and duplicates. Bool and
+noninteger values are rejected. An empty vector returns empty output arrays;
+a scalar still returns one-element arrays. Richness is the expected number
+of tips, not a fixed-size sample without replacement.
 
 `upper_bound=false` gives the exact Bernoulli variance; `true` keeps picante's
 upper bound by using ancestor instead of descendant occurrence probabilities
 in covariance terms. All-tip inclusion has variance zero.
 
-Subtree sums replace ancestor/descendant edge-pair enumeration: O(ntips*nodes)
-work and linear auxiliary storage, with no VCV, distance or edge-pair matrix.
-Branch lengths must be finite/nonnegative with a finite sum. Inputs are not
-mutated. Returns `ExpectedPDResult` in increasing richness order.
+Subtree sums replace ancestor/descendant edge-pair enumeration: O(nodes+ntips)
+preparation plus O(m*nodes) work for m requested points, with
+O(nodes+ntips+m) storage and no VCV, distance or edge-pair matrix. Branch
+lengths must be finite/nonnegative with a finite sum, even for an empty
+request. Inputs are not mutated. Returns `ExpectedPDResult` with owned arrays.
 """
-function expected_pd(tree::CompactTree; upper_bound::Bool = true)
-    expected, variance = _expected_pd_vectors(tree; upper_bound)
-    return ExpectedPDResult(richness = collect(1:tree.ntips), expected_pd = expected,
+function expected_pd(tree::CompactTree; richness = nothing, upper_bound::Bool = true)
+    selected = _expected_pd_richness(richness, tree.ntips)
+    expected, variance = _expected_pd_vectors(tree, selected; upper_bound)
+    return ExpectedPDResult(richness = selected, expected_pd = expected,
         variance_pd = variance, upper_bound = upper_bound)
 end
 
-pd_variance(tree::CompactTree; upper_bound::Bool = true) = expected_pd(tree; upper_bound)
+pd_variance(tree::CompactTree; richness = nothing, upper_bound::Bool = true) =
+    expected_pd(tree; richness, upper_bound)

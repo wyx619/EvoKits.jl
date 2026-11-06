@@ -219,3 +219,134 @@ end
         end
     end
 end
+
+@testset "Expected PD requested richness, ownership and validation" begin
+    mktempdir() do dir
+        path = joinpath(dir, "selected.nwk")
+        write_tree(path, "((A:1,B:1):1,(C:1,D:1):1);")
+        tree = read_tree(path)
+        saved = deepcopy(tree)
+        source = [4, 3, 1, 2, 1]
+        requests = (2, Int32(3), UInt8(1), big"4", [3, 1, 4, 1], Int32[2, 4],
+            Any[4, 1], 1:2:4, 4:-1:1, view(source, 2:4), Int[], 2:1)
+        for upper_bound in (false, true)
+            full = expected_pd(tree; upper_bound)
+            explicit = expected_pd(tree; richness = nothing, upper_bound)
+            @test explicit.richness == full.richness == collect(1:4)
+            @test explicit.expected_pd == full.expected_pd
+            @test explicit.variance_pd == full.variance_pd
+            for request in requests
+                selected = request isa Integer ? [Int(request)] : Int[request...]
+                result = expected_pd(tree; richness = request, upper_bound)
+                alias = pd_variance(tree; richness = request, upper_bound)
+                @test result isa ExpectedPDResult
+                @test result.richness == selected
+                @test result.upper_bound === upper_bound
+                @test result.expected_pd == full.expected_pd[selected]
+                @test result.variance_pd == full.variance_pd[selected]
+                @test result.richness == alias.richness
+                @test result.expected_pd == alias.expected_pd
+                @test result.variance_pd == alias.variance_pd
+                @test result.richness !== request
+                @test result.expected_pd !== result.variance_pd
+                @test result.richness !== alias.richness
+                @test result.expected_pd !== alias.expected_pd
+                @test result.variance_pd !== alias.variance_pd
+            end
+        end
+        @test source == [4, 3, 1, 2, 1]
+        @test all(isequal(getfield(tree, field), getfield(saved, field)) for field in fieldnames(CompactTree))
+        selected = [3, 1, 4, 1]
+        result = expected_pd(tree; richness = selected)
+        selected[1] = 2
+        @test result.richness == [3, 1, 4, 1]
+        result.richness[2] = 4
+        result.expected_pd[1] = -1
+        result.variance_pd[1] = -2
+        fresh = expected_pd(tree; richness = [3, 1, 4, 1])
+        @test fresh.richness == [3, 1, 4, 1]
+        @test fresh.expected_pd ≈ [4.875, 1.875, 6, 1.875]
+        @test fresh.variance_pd ≈ [1.3359375, 3.2109375, 0, 3.2109375]
+        for request in (0, -1, 5, true, false, 2.0, 1//1, NaN, Inf, missing,
+            "2", (1, 2), Set([1, 2]), [1 2], [[1]], [1, 0], [5, 1],
+            [2.0], [true], Any[1, missing], typemax(UInt), big(typemax(Int)) + 1)
+            for f in (expected_pd, pd_variance)
+                @test_throws ArgumentError f(tree; richness = request)
+            end
+        end
+        for bad in (-1.0, Inf, NaN, 1e308)
+            invalid = deepcopy(tree)
+            fill!(invalid.edge_length, bad)
+            for request in (Int[], 4, [4, 1]), f in (expected_pd, pd_variance)
+                @test_throws ArgumentError f(invalid; richness = request)
+            end
+        end
+    end
+end
+
+@testset "Expected PD selected points match independent Bernoulli outcomes" begin
+    rng = MersenneTwister(20261107)
+    mktempdir() do dir
+        path = joinpath(dir, "outcomes.nwk")
+        examples = ["A;", "(((A:2):3):4);", "(A:0,B:0,C:0);",
+            "(A:0,B:1,C:2,D:0);", "(((A:1,B:3):2,C:0):5,D:2,E:7);",
+            "(((A:1e-100,B:1e-100):1e100,C:1e100):1e100,D:0);"]
+        append!(examples, [moment_newick(rng, rand(rng, 2:8)) for _ in 1:12])
+        for newick in examples
+            write_tree(path, newick)
+            tree = read_tree(path)
+            means, variances = expected_pd_enumeration(tree)
+            request = [tree.ntips; rand(rng, 1:tree.ntips, 4); 1; tree.ntips]
+            for upper_bound in (false, true)
+                result = expected_pd(tree; richness = request, upper_bound)
+                @test result.richness == request
+                @test result.expected_pd ≈ means[request] rtol=2e-13
+                if upper_bound
+                    @test all(result.variance_pd .>= variances[request] .* (1 - 2e-13))
+                else
+                    @test result.variance_pd ≈ variances[request] rtol=2e-13
+                end
+                @test result.variance_pd[1] == result.variance_pd[end] == 0
+                @test all(isfinite, result.expected_pd)
+                @test all(isfinite, result.variance_pd)
+            end
+        end
+        p = 4_000
+        left = "(" * join(("sp_$i:1e-100" for i in 1:(p ÷ 2)), ",") * "):1e300"
+        right = join(("sp_$i:1e-100" for i in (p ÷ 2 + 1):p), ",")
+        write_tree(path, "(" * left * "," * right * ");")
+        tree = read_tree(path)
+        for upper_bound in (false, true)
+            result = expected_pd(tree; richness = [p, p ÷ 2, p - 1, p ÷ 2], upper_bound)
+            @test all(isfinite, result.variance_pd)
+            @test result.variance_pd[1] == 0
+            @test result.variance_pd[2] == result.variance_pd[4]
+            @test result.variance_pd[2] ≈ Float64(big"1e600" * big"0.5"^2000) rtol=1e-12
+        end
+    end
+end
+
+@testset "Expected PD few-point storage on a large species pool" begin
+    mktempdir() do dir
+        path = joinpath(dir, "star.nwk")
+        p = 20_000
+        write_tree(path, "(" * join(("sp_$i:1" for i in 1:p), ",") * ");")
+        tree = read_tree(path)
+        request = [p, 10, 100, 1, 10]
+        for upper_bound in (false, true)
+            result = expected_pd(tree; richness = request, upper_bound)
+            @test result.richness == request
+            @test result.expected_pd ≈ Float64.(request) rtol=2e-11
+            @test result.variance_pd ≈ request .* (1 .- request ./ p) rtol=2e-11
+            @test Base.summarysize(result) < 2_000
+            @test @allocated(expected_pd(tree; richness = request, upper_bound)) < 3_000_000
+            endpoint = expected_pd(tree; richness = [p, p], upper_bound)
+            @test endpoint.expected_pd == [p, p]
+            @test endpoint.variance_pd == [0, 0]
+            @test @allocated(expected_pd(tree; richness = [p, p], upper_bound)) < 10_000
+            empty_result = expected_pd(tree; richness = Int[], upper_bound)
+            @test isempty(empty_result.richness) && isempty(empty_result.expected_pd) && isempty(empty_result.variance_pd)
+            @test @allocated(expected_pd(tree; richness = Int[], upper_bound)) < 10_000
+        end
+    end
+end

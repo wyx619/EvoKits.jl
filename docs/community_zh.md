@@ -151,6 +151,9 @@ richness_metric = psr(moment_data, tree)
 moments = expected_pd(tree; upper_bound=false)
 moments.expected_pd  # [1.875, 3.5, 4.875, 6.0]
 moments.variance_pd  # [2.3671875, 2.375, 1.2421875, 0.0]
+selected = expected_pd(tree; richness=[3, 1, 4], upper_bound=false)
+selected.richness     # [3, 1, 4]
+selected.expected_pd  # [4.875, 1.875, 6.0]
 diversity = psd(moment_data, tree)
 diversity.pse         # [1/2, 5/6]：等丰度时 PSE = PSV
 diversity.psc         # [1/2, 1/2]
@@ -161,7 +164,9 @@ pse(sparse([2.0 1 0 0]), tree).pse  # [4/9]
 
 稀疏数据的 PSV/PSR、PSE/PSC 使用观测物种连接树，保留原根对相关性和原始协方差的贡献。独立 PSV 只计算变异性，PSR 由同一路径得到；PSD 为每个群落只建一次连接树，供 PSV/PSE/PSC 共用。PSV/PSR（含 PSD 返回的对应项）的方差仍基于完整原树物种池，包括未观测物种及仅在单物种群落出现的物种。稠密场景保留顺序遍历，复杂度及实测见 [PSV/PSR 性能](performance_zh.md#psvpsr-连接树)和 [PSD 共用计算](performance_zh.md#psepsc-与-psd-共用计算)。
 
-`expected_pd` 及别名 `pd_variance` 保留另一种模型：每个 tip 以 `richness/tree.ntips` 的概率**独立出现**，richness 是期望物种数。`upper_bound=false` 给出精确 Bernoulli 方差，默认 true 给出 picante 的协方差上界；并非固定样本量稀释曲线。枝长须有限、非负且总和有限；[算法与扩展性](performance_zh.md#解析多样性矩)单独说明。
+`expected_pd` 及别名 `pd_variance` 保留另一种模型：每个 tip 以 `richness/tree.ntips` 的概率**独立出现**，richness 是期望物种数。`upper_bound=false` 给出精确 Bernoulli 方差，默认 true 给出 picante 的协方差上界；并非固定样本量稀释曲线。
+
+省略 `richness` 返回完整 `1:tree.ntips` 曲线；指定该区间内的整数、整数向量或区间时，仅计算请求点，保留顺序与重复值。标量仍返回单元素数组，空向量返回空数组；Bool、非整数类型及越界值报错。结果独立拥有数组。即使请求为空，也要求枝长有限、非负且总和有限。[算法与扩展性](performance_zh.md#解析多样性矩)单独说明。
 
 ### Rao 多样性分解
 

@@ -177,8 +177,11 @@ See [Rao partition rules and example](community.md#rao-diversity-partition).
   with `NaN` for fewer than two species. Raw-covariance PSC can be negative.
   `psd` returns `psv`, `var_psv`, `psc`, `psr`, `var_psr`, `pse` and `richness`
   in site order, each with its own array and the individual metric's rules.
-- `expected_pd` and `pd_variance` return `ExpectedPDResult`; `richness` is
-  `1:tree.ntips`. Every tip independently occurs with probability
+- `expected_pd` and `pd_variance` return `ExpectedPDResult`; `richness` defaults
+  to `1:tree.ntips`. The keyword accepts an integer or integer vector/range
+  within that interval, preserving order and duplicates. All three result
+  arrays contain only requested points, even for scalar or empty requests.
+  Every tip independently occurs with probability
   `richness/tree.ntips`, so richness is an expected count. `expected_pd` is
   the mean PD; `variance_pd` is the exact Bernoulli variance when
   `upper_bound=false`, or picante's covariance upper bound by default.

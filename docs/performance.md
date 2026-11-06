@@ -484,13 +484,37 @@ still prepare their inputs independently.
 
 `expected_pd` / `pd_variance` replace ancestor–descendant edge-pair enumeration
 with subtree sums. The full Bernoulli richness curve takes `O(p*e)` work and
-`O(p+e)` storage, replacing `O(p*e^2)` work. Exact variance and the covariance
-upper bound use the same storage order. Probabilities are cached by descendant
+`O(p+e)` storage, replacing `O(p*e^2)` work. Supplying m richness values computes
+only those points: `O(p+e)` preparation, `O(m*e)` evaluation and `O(p+e+m)`
+storage. An empty request or requests containing only p validate the branches
+and return directly in `O(e+m)` work, without allocating tree workspaces.
+Exact variance and the covariance upper bound use the same storage order.
+Probabilities are cached by descendant
 count; logarithmic tail evaluation retains representable variance terms when
 absence probabilities underflow. The distinct sampling models and corrected
 PSV variance are described in the [community guide](community.md#psv-psr-and-analytical-pd-moments).
 
-Local comparisons use balanced unit-branch trees, Julia 1.12.7, one Julia/BLAS
+For `richness=[10,50,100]` and exact variance, the previous subtree implementation's
+full-curve-then-select path compares as follows on 4,096-tip unit-branch trees.
+These measurements use Julia 1.12.7, one Julia/BLAS thread, and the median of
+three calls after warm-up; tree construction is excluded:
+
+| Shape | Full curve, then select | Requested points | Previous allocation | Requested allocation |
+| --- | ---: | ---: | ---: | ---: |
+| Balanced | 126.22 ms | 0.297 ms | 0.396 MB | 0.297 MB |
+| Comb | 344.25 ms | 0.412 ms | 0.686 MB | 0.587 MB |
+| Star | 58.02 ms | 0.105 ms | 0.280 MB | 0.182 MB |
+
+At 65,536 tips, the same three exact points take 4.24/7.91/1.70 ms on
+balanced/comb/star trees, cumulatively allocating 4.72/9.62/2.88 MB. Each result
+retains 224 bytes (`Base.summarysize`); tree preparation remains linear.
+The grid also covers one and 16 requested points and both variance modes.
+Allocation and retained size are separate quantities; neither measures process
+peak memory, which was not measured here. The default full curve retains its
+original complexity.
+
+Earlier comparisons below predate requested-point support. They use balanced
+unit-branch trees, Julia 1.12.7, one Julia/BLAS
 thread and the median of three calls after warm-up. PSV uses eight sites with
 three presences each, scaled covariance and variance enabled; expected PD
 uses the default upper bound. Tree construction is excluded:

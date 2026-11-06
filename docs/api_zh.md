@@ -93,7 +93,7 @@ Newick/NEXUS 格式逐文件识别。NEXUS 的树号只统计 `TREE`/`UTREE` 定
 - `ses_pd`、`ses_mpd` 和 `ses_mntd` 返回带类型的结果，包含观测值、零模型均值和标准差、z 分数、秩 p 值、运行次数和零模型。空群落的 MPD/MNTD 为 `NaN`；单物种群落也为 `NaN`，但正质量的丰度加权 MPD 为零。
 - `psv` 返回 `PSVResult`，包含 `psv`、`richness`、`variance` 和 `scale_vcv`。方差对应从全部树 tips 中按该丰富度均匀无放回抽样，完整物种池的方差为零，修正了原公式的叶序依赖。少于两个分类单元的群落的 PSV 和方差为 `NaN`；`compute_var=false` 将方差留为 `NaN`。`psr`、`pse`、`psc` 和 `psd` 返回命名元组，其字段为相应函数文档中的指标名称，详见 [PSV 与 PD 矩](community_zh.md#psvpsr-与解析-pd-矩)。
 - `pse` 使用相对丰度，正值等丰度时等于 PSV；`psc` 仅使用存在信息，排除同一物种身份，保留不同物种间的零差异。两者返回相应指标及 `richness`，少于两个物种时为 `NaN`，原始协方差模式的 PSC 可为负。`psd` 按群落顺序返回 `psv`、`var_psv`、`psc`、`psr`、`var_psr`、`pse` 和 `richness`，各字段独立拥有数组，沿用单项指标规则。
-- `expected_pd` 和 `pd_variance` 返回 `ExpectedPDResult`；`richness` 为 `1:tree.ntips`。每个 tip 以 `richness/tree.ntips` 的概率独立出现，因此丰富度是期望数量。`expected_pd` 为 PD 均值；`variance_pd` 在 `upper_bound=false` 时为精确 Bernoulli 方差，默认采用 picante 的协方差上界。
+- `expected_pd` 和 `pd_variance` 返回 `ExpectedPDResult`；`richness` 默认是 `1:tree.ntips`，可用同名关键字指定区间内的整数、整数向量或区间，保留顺序与重复值。三个结果数组均仅含请求点，标量和空请求也返回数组。每个 tip 以 `richness/tree.ntips` 的概率独立出现，因此丰富度是期望数量。`expected_pd` 为 PD 均值；`variance_pd` 在 `upper_bound=false` 时为精确 Bernoulli 方差，默认采用 picante 的协方差上界。
 - `pd_calc(tree, tips; variant=...)` 为 tip 子集返回一个标量；矩阵输入返回包含 `pd`、`richness` 和规范化 `variant` 的命名元组。支持 `TBL`、`MST`、`UEH`、`SBL` 和 `TIP`。
 - `pd_bootstrap(tree, ntips; ...)` 返回重复计算得到的标量向量；`pd_bootstrap(community, tree; ...)` 返回包含 `observed`、群落 × 重复次数的 `replicates` 和 `richness` 的 `PDBootstrapResult`。权重按树 tip 顺序，零权重、单物种/根枝及种子兼容约定见 [PD 变体与 bootstrap](community_zh.md#pd-变体与-bootstrap)。
 
