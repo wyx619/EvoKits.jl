@@ -3,6 +3,7 @@ using EvoKits
 using DataFrames
 using Random
 
+include("tree_conversion.jl")
 include("tree_stream.jl")
 include("tree_nexus.jl")
 include("tree_distances.jl")

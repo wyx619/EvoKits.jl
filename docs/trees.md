@@ -23,6 +23,9 @@ write_tree("binary.nwk", binary_tree)
 `CompactTree` is the common input type for EvoKits tools. It caches topology,
 edge lengths, traversal order, and tip-label lookup. `read_tree` reads a Newick
 file directly into this representation.
+Conversion uses iterative traversals, preserving node/edge order and the
+left-to-right postorder. Deep combs and unary chains can therefore be read
+without a recursive postorder call for each level.
 
 Tree queries use compact node IDs, tip positions, or tip labels explicitly:
 

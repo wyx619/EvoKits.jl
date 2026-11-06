@@ -35,6 +35,15 @@ pd(sample, tree)
 Measurements use balanced rooted trees with unit branch lengths on Julia 1.12.7
 after a warm-up.
 
+`CompactTree` conversion now builds postorder iteratively in linear time and
+heap storage, preserving child order and avoiding depth recursion. A separate
+regression reads actual 65,536-tip left/right combs and a unary chain of depth
+65,536. Complete `read_tree` calls for those combs take 136/126 ms and cumulatively
+allocate 119.73/116.18 MB on Julia 1.12.7, with one Julia/BLAS thread and the
+median of three runs after warm-up. Both results retain 17.89 MB; these quantities
+are not process peak memory. On 8,192-tip trees, conversion timings remain
+similar to the recursive implementation, with lower cumulative allocations.
+
 ## Posterior tree input
 
 `read_trees` scans once, retaining the current command/record and parsed tree
@@ -441,8 +450,9 @@ and retained objects are not process peak memory. No peak was measured here.
 Gains depend on observed coverage and site count. High occupancy uses the
 original kernel with a small selection cost; summary mode also retains a
 linear preparation floor. Synthetic trees are constructed iteratively before
-timing; Newick parsing/conversion is excluded. The existing recursive conversion
-can overflow on very deep combs. Storage regressions cover 20,000-tip compressed
+timing; Newick parsing/conversion is excluded. Conversion now uses iterative
+postorder, verified by reading actual 65,536-tip combs through `read_tree` and
+the Newick/NEXUS stream entry points. Storage regressions cover 20,000-tip compressed
 calculations and 6,000-site summary output in both weighting modes.
 
 ## Analytical diversity moments

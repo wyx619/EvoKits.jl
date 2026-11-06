@@ -21,6 +21,7 @@ write_tree("binary.nwk", binary_tree)
 ```
 
 `CompactTree` 是 EvoKits 工具的通用输入类型。它缓存拓扑、枝长、遍历顺序和 tip 标签查找信息。`read_tree` 将 Newick 文件直接读取为这种表示。
+转换采用迭代遍历，保留节点、边及从左到右的后序顺序；深梳状树和单分支链的读入不再依赖逐层递归的后序调用。
 
 树查询明确使用紧凑节点 ID、tip 位置或 tip 标签：
 

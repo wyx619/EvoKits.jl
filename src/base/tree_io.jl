@@ -86,17 +86,18 @@ function compact_tree(tree::T) where {T <: NewickTree.Node}
         end
     end
 
-    postorder = Int32[]
-    postorder_internal = Int32[]
-    function dfs(node::Int32)
-        for child in children[node]
-            dfs(child)
-        end
-        push!(postorder, node)
-        !is_tip[node] && push!(postorder_internal, node)
-        return nothing
+    # Traverse right-to-left preorder and fill backwards to preserve the
+    # original left-to-right postorder without recursion on deep trees.
+    postorder = Vector{Int32}(undef, nnodes)
+    position = nnodes
+    push!(stack2, root)
+    while !isempty(stack2)
+        node = pop!(stack2)
+        postorder[position] = node
+        position -= 1
+        append!(stack2, children[node])
     end
-    dfs(root)
+    postorder_internal = Int32[node for node in postorder if !is_tip[node]]
 
     tip_ids = Int32[findall(is_tip)...]
     ntips = length(tip_ids)

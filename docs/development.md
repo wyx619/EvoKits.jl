@@ -41,6 +41,10 @@ determine their load order even when they occupy different subdirectories.
 selected records. These files load before traits and community and have no dependency
 on the community layer.
 
+`base/tree_io.jl` builds `CompactTree` with iterative traversals. Postorder is
+filled backwards during right-to-left preorder, reusing the traversal stack
+and preserving the original left-to-right child order without depth recursion.
+
 `gom.jl` exposes fixed-k mixture results and the indicator adapter;
 `gom_fit.jl` implements sparse likelihood/EM accumulation and safeguarded
 log-ratio acceleration. It uses existing Julia dependencies.

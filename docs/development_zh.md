@@ -29,6 +29,8 @@ EvoKits 保持单一 Julia 模块。[EvoKits.jl](../src/EvoKits.jl) 声明公共
 
 `nmds_alignment.jl` 按共同标签计算正交 Procrustes 变换；`nmds_colors.jl` 将坐标映射到 phyloregion 固定色板，并保存可复用范围。两者均使用现有依赖，在独立坐标副本上操作。
 
+`base/tree_io.jl` 以迭代遍历构造 `CompactTree`：从右向左做前序遍历，反向填入后序数组，复用遍历栈，保留原来从左到右的孩子顺序，消除深树后序递归。
+
 `rao.jl` 定义 Rao 熵及其分解，复用 `community_distances.jl` 准备的稀疏记录与分支距离工作区；两者均先于 `data_metrics.jl` 的 `CommunityData` 适配加载。
 `pairwise=false` 路径仅计算对角线及合并群落，复用同一工作区和结果类型，群落对矩阵留空。
 `_rao_prepare` 先按原丰度合并，再将群落及合并行共同映射到既有连接树；`_rao_result` 在所选拓扑上共用两种输出模式，公共参数和结果类型不变。
